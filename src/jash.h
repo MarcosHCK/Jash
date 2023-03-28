@@ -15,12 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#include <config.h>
-#include <stdio.h>
-#include <stdlib.h>
+#ifndef __JASH__
+#define __JASH__ 1
+#include <glib.h>
 
-int main ()
-{
-  printf ("Hello World!\n");
-return 0;
-}
+#endif // __JASH__

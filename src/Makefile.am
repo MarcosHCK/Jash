@@ -28,6 +28,9 @@ bin_PROGRAMS=\
 	$(VOID)
 
 noinst_HEADERS=\
+	code.h \
+	jobqueue.h \
+	machine.h \
 	$(VOID)
 
 #
@@ -36,7 +39,10 @@ noinst_HEADERS=\
 #
 
 jash_SOURCES=\
-	main.c \
+	code.c \
+	jash.c \
+	jobqueue.c \
+	machine.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \
