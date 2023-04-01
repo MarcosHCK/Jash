@@ -9,6 +9,7 @@ Descripción abstracta del funcionamiento del objeto que encapsula una máquina 
   - *pipe_w*: extremo de escritura de la tubería.
   - *proc_in*: archivo de lectura del proceso.
   - *proc_out*: archivo de lectura del proceso.
+  - *last_return*: valor de retorno. 
   - *instructions*: cola de instrucciones.
   - *arguments*: pila de argumentos.
   - *flags*: pila de valores de retorno.
@@ -30,6 +31,8 @@ Descripción abstracta del funcionamiento del objeto que encapsula una máquina 
             return true
           end
         end
+
+        last_return = children.last ().get_return_value ();
 
         instructions.pop ();
         return self.execute ();
@@ -122,12 +125,11 @@ Descripción abstracta de las instrucciones que ejecuta la máquina virtual. Not
   ```
     exec (proc_in, proc_out, command);
   ```
-  - **EXECF(command : string)**: similar a **EXEC**, pero adicionalmente apila el valor de retorno del proceso en la pila de valores de retorno.
+  - **SYNC()**: sincroniza los procesos en espera, es decir, espera a que los procesos que hay en la lista de procesos terminen y guarda el valor de retorno del último proceso en la lista de procesos hijos.
+  - **PPRC()**: apila el valor de retorno almacenado por **SYNC**.
   ```
-    value = exec (proc_in, proc_out, command);
-    flags.push (value);
+    flags.push (last_return);
   ```
-  - **SYNC()**: sincroniza los procesos en espera, es decir, espera a que los procesos que hay en la lista de procesos terminen.
 - Condicionales
   - **IF(instructions : int)**: omite *instructions* instrucciones de la cola si la el valor la cima de la pila de valores de retorno es diferente de 0.
   ```
