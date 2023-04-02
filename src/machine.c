@@ -17,7 +17,10 @@
  */
 #include <config.h>
 #include <machine.h>
-#include <stdio.h>
+#include<stdio.h>
+#include<unistd.h>
+#include<sys/types.h>
+#include<sys/wait.h>
 
 struct _JMachine
 {
@@ -118,7 +121,8 @@ gboolean j_machine_execute (JMachine* machine)
       g_queue_push_head(&(machine->arguments), Actual_Inst->string_argument);
       break;
     case(PAP):
-      
+      //M falta implementarlo
+      break;
     case(SET):
       gchar* key = g_strdup(Actual_Inst->string_argument);
       gchar* argument = g_strdup(g_queue_pop_head(&(machine->arguments)));
@@ -151,10 +155,13 @@ gboolean j_machine_execute (JMachine* machine)
       g_queue_free(&(machine->arguments));
       break;
     case(SYNC):
-      //Comprobar si hay procesos corriendo y en tal caso:
-      g_queue_push_head(&(machine->instructions), Actual_Inst);//si se borra d la cola d instrucciones con el pop a lo mejor esto se destruye
-      //return true otherwise
+    int status = 0;
+      if(Processes_Running(machine, &status))
+        g_queue_push_head(&(machine->instructions), Actual_Inst);
+        //si se borra d la cola d instrucciones con el pop a lo mejor esto se destruye
+        break;
   }
+  return (machine->instructions.length == 0);
 }
 void Get_Arguments(JMachine* machine, char* args[])
 {
@@ -162,10 +169,17 @@ void Get_Arguments(JMachine* machine, char* args[])
   int n = pila->length;
   args = (char**)malloc(n*sizeof(char*));
   for(int i = 0; i < n; i++)
-  {
-    //Aqui tengo dos dudas
     //1- El metodo g_queue_peek_nth es 0indexed o 1indexed?
     //2- El metodo g_queue_peek_nth es O(1) o O(n)?
     args[i] = g_queue_peek_nth(pila, i + 1);
+}
+gboolean Processes_Running(JMachine* machine, int status)
+{
+  pid_t pid;
+  for(GList* elem = machine->children; elem; elem = elem->next)
+  {
+    pid = elem->data;
+    if(!waitpid(pid, &status, WNOHANG))return TRUE;
   }
+  return FALSE;
 }
