@@ -32,6 +32,7 @@ extern "C" {
   G_GNUC_INTERNAL void j_machine_push_instruction (JMachine* machine, JCode* code);
   G_GNUC_INTERNAL void j_machine_push_instructions (JMachine* machine, JCode* codes, guint n_codes);
   G_GNUC_INTERNAL gboolean j_machine_execute (JMachine* machine);
+  G_GNUC_INTERNAL void Get_Arguments (JMachine* machine, char* args[]);
 
 #if __cplusplus
 }
