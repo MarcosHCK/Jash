@@ -17,6 +17,10 @@
  */
 #include <config.h>
 #include <machine.h>
+#include<stdio.h>
+#include<unistd.h>
+#include<sys/types.h>
+#include<sys/wait.h>
 
 struct _JMachine
 {
@@ -31,12 +35,14 @@ struct _JMachine
   GQueue arguments;
   GQueue flags;
   GList* children;
+
+  //M gustaria poder hacer q esta HashTable fuera privada
+  GHashTable* dictionary;
 };
 
 JMachine* j_machine_new ()
 {
   JMachine* self;
-
   self = g_slice_new (JMachine);
   self->ref_count = 1;
   self->pipe_r = -1;
@@ -48,6 +54,7 @@ JMachine* j_machine_new ()
   g_queue_init (&self->instructions);
   g_queue_init (&self->arguments);
   g_queue_init (&self->flags);
+  self->dictionary = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 return self;
 }
 
@@ -73,4 +80,106 @@ void j_machine_unref (JMachine* machine)
       g_queue_clear_full (&self->instructions, (GDestroyNotify) j_code_free);
       g_slice_free (JMachine, self);
     }
+}
+
+void j_machine_push_instruction (JMachine* machine, JCode* code)
+{
+  g_queue_push_tail(machine, code);
+}
+
+void j_machine_push_instructions (JMachine* machine, JCode* codes, guint n_codes)
+{
+  for (unsigned int i = 0; i < n_codes; i++)
+    g_queue_push_tail(&(machine->instructions), &codes[i]);
+}
+
+gboolean j_machine_execute (JMachine* machine)
+{
+  if(machine->instructions.length == 0)return TRUE;
+  JCode* Actual_Inst = g_queue_pop_head(&(machine->instructions));
+  switch(Actual_Inst->type)
+  {
+    case(PSI):
+      machine->proc_in = machine->pipe_r;
+      break;
+    case(PSO):
+      machine->proc_out = machine->pipe_w;
+      break;
+    case(FSI):
+      machine->pipe_r = open(Actual_Inst->string_argument);
+      break;
+    case(FSO):
+      machine->pipe_w = open(Actual_Inst->string_argument);
+      break;
+    case(PIPE):
+      int xtr[2];
+      pipe(xtr);
+      machine->pipe_r = xtr[0];
+      machine->pipe_w = xtr[1];
+      break;
+    case(PAS):
+      g_queue_push_head(&(machine->arguments), Actual_Inst->string_argument);
+      break;
+    case(PAP):
+      //M falta implementarlo
+      break;
+    case(SET):
+      gchar* key = g_strdup(Actual_Inst->string_argument);
+      gchar* argument = g_strdup(g_queue_pop_head(&(machine->arguments)));
+      g_hash_table_insert(machine->dictionary, key, argument);
+      break;
+    case(GET):
+      char* value = g_hash_table_lookup(machine->dictionary, Actual_Inst->string_argument);
+      g_queue_push_head(&(machine->arguments), value);
+      break;
+    case(USET):
+      g_hash_table_insert(machine->dictionary, Actual_Inst->string_argument, NULL);
+      break;
+    case(DUMP):
+      value = g_queue_pop_head(&(machine->arguments));
+      FILE* file = fdopen(machine->proc_out);
+      fprintf(file, value);
+      fclose(file);
+      break;
+    case(EXEC):
+      pid_t pid_hijo = fork();
+      if (pid_hijo == 0)
+      {
+        char** args;
+        Get_Arguments(machine, args);
+        execvp(Actual_Inst->string_argument, args);
+      }else
+      {
+        g_list_append(machine->children, pid_hijo);
+      }
+      g_queue_free(&(machine->arguments));
+      break;
+    case(SYNC):
+    int status = 0;
+      if(Processes_Running(machine, &status))
+        g_queue_push_head(&(machine->instructions), Actual_Inst);
+        //si se borra d la cola d instrucciones con el pop a lo mejor esto se destruye
+        break;
+  }
+  return (machine->instructions.length == 0);
+}
+void Get_Arguments(JMachine* machine, char* args[])
+{
+  GQueue* pila = &(machine->arguments);
+  int n = pila->length;
+  args = (char**)malloc(n*sizeof(char*));
+  for(int i = 0; i < n; i++)
+    //1- El metodo g_queue_peek_nth es 0indexed o 1indexed?
+    //2- El metodo g_queue_peek_nth es O(1) o O(n)?
+    args[i] = g_queue_peek_nth(pila, i + 1);
+}
+gboolean Processes_Running(JMachine* machine, int status)
+{
+  pid_t pid;
+  for(GList* elem = machine->children; elem; elem = elem->next)
+  {
+    pid = elem->data;
+    if(!waitpid(pid, &status, WNOHANG))return TRUE;
+  }
+  return FALSE;
 }
