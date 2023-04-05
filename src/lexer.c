@@ -143,8 +143,8 @@ JLexer* j_lexer_new_from_file (const gchar* filename, GError** error)
     }
 
   JLexer* lexer = NULL;
-  //GIOChannel* channel = j_fd_channel_new (fd);
-  GIOChannel* channel = g_io_channel_unix_new (fd);
+  GIOChannel* channel = j_fd_channel_new (fd);
+  //GIOChannel* channel = g_io_channel_unix_new (fd);
   GError* tmperr = NULL;
 
   lexer = j_lexer_new_from_channel (channel, &tmperr);

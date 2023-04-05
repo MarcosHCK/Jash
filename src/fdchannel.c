@@ -117,7 +117,7 @@ static GIOStatus channel_read (GIOChannel* channel, gchar* buf, gsize bufsz, gsi
               g_set_error_literal
               (error,
               G_IO_CHANNEL_ERROR,
-              g_file_error_from_errno (e),
+              g_io_channel_error_from_errno (e),
               g_strerror (e));
               return G_IO_STATUS_ERROR;
             }
@@ -127,10 +127,166 @@ static GIOStatus channel_read (GIOChannel* channel, gchar* buf, gsize bufsz, gsi
 return (got == 0) ? G_IO_STATUS_EOF : G_IO_STATUS_NORMAL;
 }
 
-#define UNDEFINED { g_assert_not_reached (); }
-static GIOStatus channel_write (GIOChannel* channel, const gchar* buf, gsize bufsz, gsize* bytes_written, GError** error) UNDEFINED
-static GIOStatus channel_seek (GIOChannel* channel, gint64 offset, GSeekType type, GError** error) UNDEFINED
-static GIOStatus channel_close (GIOChannel* channel, GError** error) UNDEFINED
-static void channel_free (GIOChannel* channel) UNDEFINED
-static GIOStatus channel_set_flags (GIOChannel* channel, GIOFlags flags, GError** error) UNDEFINED
-static GIOFlags channel_get_flags (GIOChannel* channel) UNDEFINED
+static GIOStatus channel_write (GIOChannel* channel, const gchar* buf, gsize bufsz, gsize* bytes_written, GError** error)
+{
+  JIOChannel* self = (gpointer) channel;
+  gsize _bytes_written;
+  gssize got;
+
+  if (bufsz > G_MAXSSIZE)
+    bufsz = G_MAXSSIZE;
+  if (bytes_written == NULL)
+    bytes_written = &_bytes_written;
+
+  do
+  {
+    if ((got = write (self->fd, buf, bufsz)) >= 0)
+      *bytes_written = got;
+    else
+      {
+        gint e;
+
+        switch ((e = errno))
+        {
+#ifdef EINTR
+          case EINTR: break;
+#endif // EINTR
+#ifdef EAGAIN
+          case EAGAIN: return G_IO_STATUS_AGAIN;
+#endif // EAGAIN
+          default:
+            {
+              g_set_error_literal
+              (error,
+              G_IO_CHANNEL_ERROR,
+              g_io_channel_error_from_errno (e),
+              g_strerror (e));
+              return G_IO_STATUS_ERROR;
+            }
+        }
+      }
+  } while (got < 0);
+return G_IO_STATUS_NORMAL;
+}
+
+static GIOStatus channel_seek (GIOChannel* channel, gint64 offset, GSeekType type, GError** error)
+{
+  JIOChannel* self = (gpointer) channel;
+  off_t offset_;
+  off_t got;
+  int whence;
+
+  switch (type)
+    {
+      case G_SEEK_CUR: whence = SEEK_CUR;
+      case G_SEEK_SET: whence = SEEK_SET;
+      case G_SEEK_END: whence = SEEK_END;
+      default: g_assert_not_reached ();
+    }
+
+  if ((offset_ = (off_t) offset) != offset)
+    {
+      const gint code = g_io_channel_error_from_errno (EINVAL);
+      const gchar* message = g_strerror (EINVAL);
+
+      g_set_error_literal (error, G_IO_CHANNEL_ERROR, code, message);
+      return G_IO_STATUS_ERROR;
+    }
+
+  if ((got = lseek (self->fd, offset_, whence)) < 0)
+    {
+      const gint e = errno;
+      const gint code = g_io_channel_error_from_errno (e);
+      const gchar* message = g_strerror (e);
+
+      g_set_error_literal (error, G_IO_CHANNEL_ERROR, code, message);
+      return G_IO_STATUS_ERROR;
+    }
+return G_IO_STATUS_NORMAL;
+}
+
+static GIOStatus channel_close (GIOChannel* channel, GError** error)
+{
+  JIOChannel* self = (gpointer) channel;
+
+  if (close (self->fd) < 0)
+    {
+      const gint e = errno;
+      const gint code = g_io_channel_error_from_errno (e);
+      const gchar* message = g_strerror (e);
+
+      g_set_error_literal (error, G_IO_CHANNEL_ERROR, code, message);
+      return G_IO_STATUS_ERROR;
+    }
+return G_IO_STATUS_NORMAL;
+}
+
+static void channel_free (GIOChannel* channel)
+{
+  JIOChannel* self = (gpointer) channel;
+  g_slice_free (JIOChannel, self);
+}
+
+static GIOStatus channel_set_flags (GIOChannel* channel, GIOFlags flags, GError** error)
+{
+  JIOChannel* self = (gpointer) channel;
+  glong flgs = 0;
+
+  if (flags & G_IO_FLAG_APPEND)
+    flgs |= O_APPEND;
+  if (flags & G_IO_FLAG_NONBLOCK)
+#ifdef O_NONBLOCK
+    flgs |= O_NONBLOCK;
+#else // !O_NONBLOCK
+    flgs |= O_NDELAY;
+#endif // O_NONBLOCK
+
+  if ((fcntl (self->fd, F_SETFL, flgs)) < 0)
+    {
+      const gint e = errno;
+      const gint code = g_io_channel_error_from_errno (e);
+      const gchar* message = g_strerror (e);
+
+      g_set_error_literal (error, G_IO_CHANNEL_ERROR, code, message);
+      return G_IO_STATUS_ERROR;
+    }
+return G_IO_STATUS_NORMAL;
+}
+
+static GIOFlags channel_get_flags (GIOChannel* channel)
+{
+  JIOChannel* self = (gpointer) channel;
+  GIOFlags flags = 0;
+  glong flgs;
+
+  if ((flgs = fcntl (self->fd, F_GETFL)) < 0)
+    {
+      const gint e = errno;
+      const gchar* message = g_strerror (e);
+
+      g_warning ("(" G_STRLOC "): Error getting FD flags: %s (%i)", message, e);
+    }
+  else
+    {
+      if (flgs & O_APPEND)
+        flags |= G_IO_FLAG_APPEND;
+#ifdef O_NONBLOCK
+      if (flgs & O_NONBLOCK)
+#else // !O_NONBLOCK
+      if (flgs & O_NDELAY)
+#endif // O_NONBLOCK
+        flags |= G_IO_FLAG_NONBLOCK;
+
+      channel->is_readable = TRUE;
+      channel->is_writeable = TRUE;
+
+      switch (flgs & (O_RDONLY | O_WRONLY | O_RDWR))
+        {
+          case O_RDWR: break;
+          case O_RDONLY: channel->is_writeable = FALSE; break;
+          case O_WRONLY: channel->is_readable = FALSE; break;
+          default: g_assert_not_reached ();
+        }
+    }
+return flags;
+}
