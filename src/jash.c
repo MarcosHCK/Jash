@@ -17,9 +17,25 @@
  */
 #include <config.h>
 #include <jobqueue.h>
+#include <lexer.h>
+
+#define _j_lexer_unref0(var) ((var == NULL) ? NULL : (var = (j_lexer_unref (var), NULL)))
 
 static void prepare (JJobQueue* queue, const gchar* filename, GError** error)
 {
+  GError* tmperr = NULL;
+  JLexer* lexer = NULL;
+
+  lexer = j_lexer_new_from_file (filename, &tmperr);
+
+  if (G_UNLIKELY (tmperr != NULL))
+    {
+      g_propagate_error (error, tmperr);
+      _j_lexer_unref0 (lexer);
+      return;
+    }
+
+  _j_lexer_unref0 (lexer);
 }
 
 int main (int argc, char* argv[])

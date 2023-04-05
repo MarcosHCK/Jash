@@ -29,7 +29,10 @@ bin_PROGRAMS=\
 
 noinst_HEADERS=\
 	code.h \
+	datachannel.h \
+	fdchannel.h \
 	jobqueue.h \
+	lexer.h \
 	machine.h \
 	$(VOID)
 
@@ -40,8 +43,11 @@ noinst_HEADERS=\
 
 jash_SOURCES=\
 	code.c \
+	datachannel.c \
+	fdchannel.c \
 	jash.c \
 	jobqueue.c \
+	lexer.c \
 	machine.c \
 	$(VOID)
 jash_CFLAGS=\
