@@ -47,6 +47,7 @@ jash_SOURCES=\
 	code.c \
 	datachannel.c \
 	fdchannel.c \
+	instance.c \
 	jash.c \
 	jobqueue.c \
 	lexer.c \
@@ -58,8 +59,20 @@ jash_CFLAGS=\
 	-DG_LOG_USE_STRUCTURED=1 \
 	$(GOBJECT_CFLAGS) \
 	$(GLIB_CFLAGS) \
+	$(READLINE_CFLAGS) \
 	$(VOID)
 jash_LDFLAGS=\
 	$(GOBJECT_LIBS) \
 	$(GLIB_LIBS) \
+	$(READLINE_LIBS) \
 	$(VOID)
+
+#
+# Extensions
+# - .stringlist -> .c
+#
+
+SUFFIXES=.stringlist
+
+.stringlist.c:
+	$(GPERF) --output-file $@ -PCI $<

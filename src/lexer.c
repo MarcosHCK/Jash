@@ -106,6 +106,7 @@ JLexer* j_lexer_new_from_data (const gchar* data, gssize length, GError** error)
 {
   g_return_val_if_fail (data != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+  length = (length >= 0) ? length : strlen (data);
 
   JLexer* lexer = NULL;
   GBytes* bytes = g_bytes_new_static (data, length);
