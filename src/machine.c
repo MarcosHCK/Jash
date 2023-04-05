@@ -70,7 +70,7 @@ void j_machine_unref (JMachine* machine)
       g_list_free (self->children);
       g_queue_clear (&self->flags);
       g_queue_clear_full (&self->arguments, (GDestroyNotify) g_free);
-      g_queue_clear_full (&self->instructions, (GDestroyNotify) j_code_free);
+      g_queue_clear_full (&self->instructions, (GDestroyNotify) j_code_unref);
       g_slice_free (JMachine, self);
     }
 }

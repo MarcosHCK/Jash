@@ -38,7 +38,7 @@ JJobQueue* j_job_queue_new ()
   JJobQueue* queue;
   queue = g_slice_new (JJobQueue);
   queue->ref_count = 1;
-  queue->next_job = 1;
+  queue->next_job = 0;
 return (g_queue_init (&queue->jobs), queue);
 }
 
@@ -61,7 +61,7 @@ void j_job_queue_unref (JJobQueue* queue)
 
   if (g_atomic_int_dec_and_test (&self->ref_count))
     {
-      g_queue_clear (&self->jobs);
+      g_queue_clear_full (&self->jobs, job_free);
       g_slice_free (JJobQueue, self);
     }
 }
@@ -110,4 +110,77 @@ gboolean j_job_queue_execute (JJobQueue* queue)
 */
     }
 return (keep);
+}
+
+void j_job_queue_add_intructions (JJobQueue* queue, JCode** codes, guint n_codes)
+{
+}
+
+void j_job_queue_push_machine (JJobQueue* queue, JMachine* machine)
+{
+  g_return_if_fail (queue != NULL);
+  g_return_if_fail (machine != NULL);
+  JJobQueue* self = (queue);
+  Job* job = g_slice_new (Job);
+
+  job->machine = j_machine_ref (machine);
+  job->order = ++self->next_job;
+
+  g_queue_push_head (&self->jobs, job);
+}
+
+static int jobcmp_machine (gconstpointer a, gconstpointer b)
+{
+  const guintptr a_ = G_STRUCT_MEMBER (guintptr, a, G_STRUCT_OFFSET (Job, machine));
+  const guintptr b_ = G_STRUCT_MEMBER (guintptr, b, G_STRUCT_OFFSET (Job, machine));
+  return (a < b) ? -1 : ((a == b) ? 0 : 1);
+}
+
+void j_job_queue_pop_machine (JJobQueue* queue, JMachine* machine)
+{
+  g_return_if_fail (queue != NULL);
+  g_return_if_fail (machine != NULL);
+  JJobQueue* self = (queue);
+  Job job_ = { .machine = machine, };
+  GList* list = NULL;
+
+  if ((list = g_queue_find_custom (&self->jobs, &job_, jobcmp_machine)) != NULL)
+    {
+      g_queue_unlink (&self->jobs, list);
+      g_list_free_full (list, job_free);
+    }
+}
+
+void j_job_queue_bring_machine (JJobQueue* queue, JMachine* machine)
+{
+  g_return_if_fail (queue != NULL);
+  g_return_if_fail (machine != NULL);
+  JJobQueue* self = (queue);
+  Job job_ = { .machine = machine, };
+  GList* list = NULL;
+
+  if ((list = g_queue_find_custom (&self->jobs, &job_, jobcmp_machine)) != NULL)
+    {
+      g_queue_unlink (&self->jobs, list);
+      g_queue_push_head_link (&self->jobs, list);
+    }
+}
+
+static int jobcmp_order (gconstpointer a, gconstpointer b)
+{
+  const gint a_ = G_STRUCT_MEMBER (gint, a, G_STRUCT_OFFSET (Job, order));
+  const gint b_ = G_STRUCT_MEMBER (gint, b, G_STRUCT_OFFSET (Job, order));
+  return (a < b) ? -1 : ((a == b) ? 0 : 1);
+}
+
+JMachine* j_job_queue_get_machine (JJobQueue* queue, gint job)
+{
+  g_return_val_if_fail (queue != NULL, NULL);
+  g_return_val_if_fail (job > 0, NULL);
+  JJobQueue* self = (queue);
+  Job job_ = { .order = job, };
+  GList* list = NULL;
+
+  list = g_queue_find_custom (&self->jobs, &job_, jobcmp_order);
+return (list == NULL) ? NULL : list->data;
 }

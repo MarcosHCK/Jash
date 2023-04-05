@@ -15,26 +15,28 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_MACHINE__
-#define __JASH_MACHINE__ 1
-#include <glib.h>
+#ifndef __JASH_PARSER__
+#define __JASH_PARSER__ 1
 #include <code.h>
+#include <token.h>
 
-typedef struct _JMachine JMachine;
+typedef struct _JParser JParser;
+
+#define J_PARSER_ERROR (j_parser_error_quark ())
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-  G_GNUC_INTERNAL JMachine* j_machine_new ();
-  G_GNUC_INTERNAL JMachine* j_machine_ref (JMachine* machine);
-  G_GNUC_INTERNAL void j_machine_unref (JMachine* machine);
-  G_GNUC_INTERNAL void j_machine_push_instruction (JMachine* machine, JCode* code);
-  G_GNUC_INTERNAL void j_machine_push_instructions (JMachine* machine, JCode** codes, guint n_codes);
-  G_GNUC_INTERNAL gboolean j_machine_execute (JMachine* machine);
+  G_GNUC_INTERNAL GQuark j_parser_error_quark (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL JParser* j_parser_new ();
+  G_GNUC_INTERNAL JParser* j_parser_new_from_tokens (JToken* tokens, guint n_tokens, GError** error);
+  G_GNUC_INTERNAL JParser* j_parser_ref (JParser* parser);
+  G_GNUC_INTERNAL void j_parser_unref (JParser* parser);
+  G_GNUC_INTERNAL JCode** j_parser_get_codes (JParser* parser, guint* n_codes);
 
 #if __cplusplus
 }
 #endif // __cplusplus
 
-#endif // __JASH_MACHINE__
+#endif // __JASH_PARSER__

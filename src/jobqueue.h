@@ -17,7 +17,7 @@
  */
 #ifndef __JASH_JOB_QUEUE__
 #define __JASH_JOB_QUEUE__ 1
-#include <glib.h>
+#include <code.h>
 #include <machine.h>
 
 typedef struct _JJobQueue JJobQueue;
@@ -32,6 +32,11 @@ extern "C" {
   G_GNUC_INTERNAL void j_job_queue_broadcast (JJobQueue* queue, JCode* code);
   G_GNUC_INTERNAL void j_job_queue_broadcast_many (JJobQueue* queue, JCode* codes, guint n_codes);
   G_GNUC_INTERNAL gboolean j_job_queue_execute (JJobQueue* queue);
+  G_GNUC_INTERNAL void j_job_queue_add_intructions (JJobQueue* queue, JCode** codes, guint n_codes);
+  G_GNUC_INTERNAL void j_job_queue_push_machine (JJobQueue* queue, JMachine* machine);
+  G_GNUC_INTERNAL void j_job_queue_pop_machine (JJobQueue* queue, JMachine* machine);
+  G_GNUC_INTERNAL void j_job_queue_bring_machine (JJobQueue* queue, JMachine* machine);
+  G_GNUC_INTERNAL JMachine* j_job_queue_get_machine (JJobQueue* queue, gint job);
 
 #if __cplusplus
 }

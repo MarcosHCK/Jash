@@ -34,6 +34,8 @@ noinst_HEADERS=\
 	jobqueue.h \
 	lexer.h \
 	machine.h \
+	parser.h \
+	token.h \
 	$(VOID)
 
 #
@@ -49,6 +51,7 @@ jash_SOURCES=\
 	jobqueue.c \
 	lexer.c \
 	machine.c \
+	parser.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \

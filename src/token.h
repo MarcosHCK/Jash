@@ -15,26 +15,38 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_MACHINE__
-#define __JASH_MACHINE__ 1
+#ifndef __JASH_TOKEN__
+#define __JASH_TOKEN__ 1
 #include <glib.h>
-#include <code.h>
 
-typedef struct _JMachine JMachine;
+typedef struct _JToken JToken;
+typedef enum _JTokenType JTokenType;
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-  G_GNUC_INTERNAL JMachine* j_machine_new ();
-  G_GNUC_INTERNAL JMachine* j_machine_ref (JMachine* machine);
-  G_GNUC_INTERNAL void j_machine_unref (JMachine* machine);
-  G_GNUC_INTERNAL void j_machine_push_instruction (JMachine* machine, JCode* code);
-  G_GNUC_INTERNAL void j_machine_push_instructions (JMachine* machine, JCode** codes, guint n_codes);
-  G_GNUC_INTERNAL gboolean j_machine_execute (JMachine* machine);
+  struct _JToken
+  {
+    guint64 type : 4;
+    guint64 line : (sizeof (guint64) * 8 - 4) / 2;
+    guint64 column : (sizeof (guint64) * 8 - 4) / 2;
+    const gchar* value;
+  };
+
+  enum _JTokenType
+  {
+    J_TOKEN_TYPE_BUILTIN,
+    J_TOKEN_TYPE_COMMENT,
+    J_TOKEN_TYPE_KEYWORD,
+    J_TOKEN_TYPE_LITERAL,
+    J_TOKEN_TYPE_OPERATOR,
+    J_TOKEN_TYPE_SEPARATOR,
+    J_TOKEN_TYPE_QUOTED,
+  };
 
 #if __cplusplus
 }
 #endif // __cplusplus
 
-#endif // __JASH_MACHINE__
+#endif // __JASH_TOKEN__

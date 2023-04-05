@@ -17,12 +17,10 @@
  */
 #ifndef __JASH_LEXER__
 #define __JASH_LEXER__ 1
-#include <glib.h>
+#include <token.h>
 
 typedef struct _JLexer JLexer;
-typedef struct _JToken JToken;
-typedef enum _JTokenType JTokenType;
-typedef enum _JTokenError JTokenError;
+typedef enum _JLexerError JLexerError;
 
 #define J_TOKEN_ERROR (j_lexer_error_quark ())
 #define J_TOKEN_BUILTIN_AGAIN (g_intern_static_string ("again"))
@@ -46,29 +44,10 @@ typedef enum _JTokenError JTokenError;
 extern "C" {
 #endif // __cplusplus
 
-  struct _JToken
+  enum _JLexerError
   {
-    guint64 type : 4;
-    guint64 line : (sizeof (guint64) * 8 - 4) / 2;
-    guint64 column : (sizeof (guint64) * 8 - 4) / 2;
-    const gchar* value;
-  };
-
-  enum _JTokenType
-  {
-    J_TOKEN_TYPE_BUILTIN,
-    J_TOKEN_TYPE_COMMENT,
-    J_TOKEN_TYPE_KEYWORD,
-    J_TOKEN_TYPE_LITERAL,
-    J_TOKEN_TYPE_OPERATOR,
-    J_TOKEN_TYPE_SEPARATOR,
-    J_TOKEN_TYPE_QUOTED,
-  };
-
-  enum _JTokenError
-  {
-    J_TOKEN_ERROR_FAILED,
-    J_TOKEN_ERROR_UNKNOWN_TOKEN,
+    J_LEXER_ERROR_FAILED,
+    J_LEXER_ERROR_UNKNOWN_TOKEN,
   };
 
   G_GNUC_INTERNAL GQuark j_lexer_error_quark (void) G_GNUC_CONST;
@@ -78,6 +57,7 @@ extern "C" {
   G_GNUC_INTERNAL JLexer* j_lexer_new_from_file (const gchar* filename, GError** error);
   G_GNUC_INTERNAL JLexer* j_lexer_ref (JLexer* lexer);
   G_GNUC_INTERNAL void j_lexer_unref (JLexer* lexer);
+  G_GNUC_INTERNAL JToken* j_lexer_get_tokens (JLexer* lexer, guint* n_tokens);
 
 #if __cplusplus
 }

@@ -18,13 +18,21 @@
 #include <config.h>
 #include <jobqueue.h>
 #include <lexer.h>
+#include <parser.h>
 
 #define _j_lexer_unref0(var) ((var == NULL) ? NULL : (var = (j_lexer_unref (var), NULL)))
+#define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
 
-static void prepare (JJobQueue* queue, const gchar* filename, GError** error)
+static void prepare (JJobQueue* jobs, const gchar* filename, GError** error)
 {
   GError* tmperr = NULL;
   JLexer* lexer = NULL;
+  JParser* parser = NULL;
+  JToken* tokens = NULL;
+  guint n_tokens = 0;
+  JCode** codes = NULL;
+  guint n_codes = 0;
+  guint good = 0;
 
   lexer = j_lexer_new_from_file (filename, &tmperr);
 
@@ -35,7 +43,20 @@ static void prepare (JJobQueue* queue, const gchar* filename, GError** error)
       return;
     }
 
+  tokens = j_lexer_get_tokens (lexer, &n_tokens);
+  parser = j_parser_new_from_tokens (tokens, n_tokens, &tmperr);
   _j_lexer_unref0 (lexer);
+
+  if (G_UNLIKELY (tmperr != NULL))
+    {
+      g_propagate_error (error, tmperr);
+      _j_parser_unref0 (parser);
+      return;
+    }
+
+  codes = j_parser_get_codes (parser, &n_codes);
+  good = (j_job_queue_add_intructions (jobs, codes, n_codes), 0);
+  _j_parser_unref0 (parser);
 }
 
 int main (int argc, char* argv[])

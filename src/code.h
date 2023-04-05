@@ -48,6 +48,7 @@ extern "C" {
 
   typedef struct _JCode
   {
+    guint ref_count;
     guint type : 5;
     guint size : sizeof (guint) * 8 - 5;
 
@@ -62,7 +63,8 @@ extern "C" {
 
   G_GNUC_INTERNAL JCode* j_code_new (JCodeType type, gsize argument_size);
   G_GNUC_INTERNAL JCode* j_code_new_string (JCodeType type, const gchar* value);
-  G_GNUC_INTERNAL void j_code_free (JCode* code);
+  G_GNUC_INTERNAL JCode* j_code_ref (JCode* code);
+  G_GNUC_INTERNAL void j_code_unref (JCode* code);
 
   #define j_code_new_int(type,value) \
     (G_GNUC_EXTENSION ({ \
@@ -72,6 +74,7 @@ extern "C" {
           __code->uintptr_argument = (guintptr) __value; \
           __code; \
       }))
+
   #define j_code_new_uint(type,value) \
     (G_GNUC_EXTENSION ({ \
         JCodeType __type = ((type)); \

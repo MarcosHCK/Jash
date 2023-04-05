@@ -181,6 +181,16 @@ void j_lexer_unref (JLexer* lexer)
     }
 }
 
+JToken* j_lexer_get_tokens (JLexer* lexer, guint* n_tokens)
+{
+  g_return_val_if_fail (lexer != NULL, NULL);
+  JLexer* self = (lexer);
+  guint nothing;
+
+  *((n_tokens) ? n_tokens : &nothing) = self->tokens->len;
+return (JToken*) self->tokens->data;
+}
+
 static TokenClass token_klass (JTokenType type, const gchar* pattern)
 {
   GError* tmperr = NULL;
@@ -403,7 +413,7 @@ static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line,
   if (added == 0 && !is_empty (lexer, input, length))
   {
     g_set_error
-    (error, J_TOKEN_ERROR, J_TOKEN_ERROR_UNKNOWN_TOKEN,
+    (error, J_TOKEN_ERROR, J_LEXER_ERROR_UNKNOWN_TOKEN,
      "%d: %d: unknown token %s", line, column, prepare (lexer, input, length));
     return -1;
   }

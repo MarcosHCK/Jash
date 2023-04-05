@@ -30,6 +30,7 @@ JCode* j_code_new (JCodeType type, gsize argument_size)
   JCode* code = g_slice_alloc0 (full);
   gpointer arg = G_STRUCT_MEMBER_P (code, sizeof (JCode));
 
+    code->ref_count = 1;
     code->type = type;
     code->size = argument_size;
     code->argument = arg;
@@ -47,8 +48,20 @@ JCode* j_code_new_string (JCodeType type, const gchar* value)
   return code;
 }
 
-void j_code_free (JCode* code)
+JCode* j_code_ref (JCode* code)
+{
+  g_return_val_if_fail (code != NULL, NULL);
+  JCode* self = (code);
+return (g_atomic_int_inc (&self->ref_count), self);
+}
+
+void j_code_unref (JCode* code)
 {
   g_return_if_fail (code != NULL);
-  g_slice_free1 (code->size + sizeof (JCode), code);
+  JCode* self = (code);
+
+  if (g_atomic_int_dec_and_test (&self->ref_count))
+    {
+      g_slice_free1 (code->size + sizeof (JCode), code);
+    }
 }
