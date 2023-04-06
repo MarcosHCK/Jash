@@ -15,31 +15,35 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_INTANCE__
-#define __JASH_INTANCE__ 1
+#ifndef __JASH_HISTCONTROL__
+#define __JASH_HISTCONTROL__ 1
 #include <glib.h>
 
-typedef int (*JInstance) (int argc, char* argv []);
-typedef struct _JInstanceIndex JInstanceIndex;
+typedef enum _JHistControl JHistControl;
+typedef struct _JHistControlIndex JHistControlIndex;
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-  struct _JInstanceIndex
+  enum _JHistControl
   {
-    int name;
-    JInstance callback;
+    J_HIST_CONTROL_NONE = 0,
+    J_HIST_CONTROL_IGNORE_DUPLICATED = (1 << 0),
+    J_HIST_CONTROL_IGNORE_FIRST_SPACE = (1 << 1),
+    J_HIST_CONTROL_ERASE_DUPLICATED = (1 << 2),
   };
 
-  G_GNUC_INTERNAL const JInstanceIndex* j_instance_index_lookup (const char *str, size_t len);
-  G_GNUC_INTERNAL int j_instance_help (int argc, char* argv []);
-  G_GNUC_INTERNAL int j_instance_history (int argc, char* argv []);
-  G_GNUC_INTERNAL int j_instance_jobs (int argc, char* argv []);
-  G_GNUC_INTERNAL int j_instance_shell (int argc, char* argv []);
+  struct _JHistControlIndex
+  {
+    gint name;
+    glong value;
+  };
+
+  G_GNUC_INTERNAL const JHistControlIndex* j_hist_control_index_lookup (const char *str, size_t len);
 
 #if __cplusplus
 }
 #endif // __cplusplus
 
-#endif // __JASH_INTANCE__
+#endif // __JASH_HISTCONTROL__

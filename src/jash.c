@@ -157,7 +157,7 @@ int j_instance_shell (int argc, char* argv[])
 
             if (G_UNLIKELY (tmperr != NULL))
               {
-                result = 1;
+                ++result;
                 const gint code = tmperr->code;
                 const gchar* domain = g_quark_to_string (tmperr->domain);
                 const gchar* message = tmperr->message;
@@ -174,7 +174,7 @@ int j_instance_shell (int argc, char* argv[])
 
     if (G_UNLIKELY (tmperr != NULL))
       {
-        result = 1;
+        ++result;
         const gint code = tmperr->code;
         const gchar* domain = g_quark_to_string (tmperr->domain);
         const gchar* message = tmperr->message;
@@ -189,7 +189,22 @@ int j_instance_shell (int argc, char* argv[])
     while (j_job_queue_execute (jobs));
   } while (!no_interactive);
 
-  _j_readline_unref0 (readline);
+  if (readline != NULL)
+    {
+      j_readline_save (readline, &tmperr);
+      j_readline_unref (readline);
+
+      if (G_UNLIKELY (tmperr != NULL))
+        {
+          ++result;
+          const gint code = tmperr->code;
+          const gchar* domain = g_quark_to_string (tmperr->domain);
+          const gchar* message = tmperr->message;
+
+          g_critical ("(" G_STRLOC "): %s: %i: %s", domain, code, message);
+          g_error_free (tmperr);
+        }
+    }
 return (j_job_queue_unref (jobs), result);
 }
 

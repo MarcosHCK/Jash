@@ -27,4 +27,5 @@
 jash
 jash.exe
 
+histcontrol.c
 instance.c

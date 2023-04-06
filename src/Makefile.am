@@ -31,6 +31,7 @@ noinst_HEADERS=\
 	code.h \
 	datachannel.h \
 	fdchannel.h \
+	histcontrol.h \
 	jobqueue.h \
 	lexer.h \
 	machine.h \
@@ -48,6 +49,7 @@ jash_SOURCES=\
 	code.c \
 	datachannel.c \
 	fdchannel.c \
+	histcontrol.c \
 	instance.c \
 	jash.c \
 	jobqueue.c \
