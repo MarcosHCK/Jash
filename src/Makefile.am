@@ -35,6 +35,7 @@ noinst_HEADERS=\
 	lexer.h \
 	machine.h \
 	parser.h \
+	readline.h \
 	token.h \
 	$(VOID)
 
@@ -53,6 +54,7 @@ jash_SOURCES=\
 	lexer.c \
 	machine.c \
 	parser.c \
+	readline.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \
