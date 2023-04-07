@@ -22,6 +22,7 @@
 #include <parser.h>
 #include <readline.h>
 
+#define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
 #define _j_lexer_unref0(var) ((var == NULL) ? NULL : (var = (j_lexer_unref (var), NULL)))
 #define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
 #define _j_readline_unref0(var) ((var == NULL) ? NULL : (var = (j_readline_unref (var), NULL)))
@@ -163,7 +164,7 @@ int j_instance_shell (int argc, char* argv[])
                 const gchar* message = tmperr->message;
 
                 g_critical ("(" G_STRLOC "): %s: %i: %s", domain, code, message);
-                g_error_free (tmperr);
+                _g_error_free0 (tmperr);
                 break;
               }
           }
@@ -180,8 +181,8 @@ int j_instance_shell (int argc, char* argv[])
         const gchar* message = tmperr->message;
 
         g_critical ("(" G_STRLOC "): %s: %i: %s", domain, code, message);
-        g_error_free (tmperr);
-        break;
+        _g_error_free0 (tmperr);
+        continue;
       }
 
     do
@@ -202,7 +203,7 @@ int j_instance_shell (int argc, char* argv[])
           const gchar* message = tmperr->message;
 
           g_critical ("(" G_STRLOC "): %s: %i: %s", domain, code, message);
-          g_error_free (tmperr);
+          _g_error_free0 (tmperr);
         }
     }
 return (j_job_queue_unref (jobs), result);
@@ -211,6 +212,13 @@ return (j_job_queue_unref (jobs), result);
 int main (int argc, char* argv[])
 {
   g_return_val_if_fail (argc >= 1, -1);
+  g_return_val_if_fail (argv [0] != NULL, -1);
+
+  gchar* dir = g_get_current_dir ();
+  gchar* jash = g_build_filename (dir, argv [0], NULL);
+
+  g_setenv ("JASH", jash, TRUE);
+  g_free (jash), g_free (dir);
 
   const JInstanceIndex* index = j_instance_index_lookup (argv [0], strlen (argv [0]));
   const JInstance callback = (index == NULL) ? j_instance_shell : index->callback;

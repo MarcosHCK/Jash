@@ -84,6 +84,7 @@ JLexer* j_lexer_new_from_channel (GIOChannel* channel, GError** error)
         case G_IO_STATUS_NORMAL:
           {
             g_string_truncate (line, terminator_pos);
+            g_string_append_c (line, '\n');
             search (lexer, line->str, line->len, line_n, 1, &tmperr);
             ++line_n;
 
@@ -236,9 +237,9 @@ static TokenClass* token_classes_peek (void)
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_THEN);
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_TRUE);
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_UNSET);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "[<>|`&]");
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "(>>|&&|\\|\\|)");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, ",;:");
+      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "[<>|`&]");
+      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, "[\n;]");
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_LITERAL, "[^\\s]+");
       G_STATIC_ASSERT (n_classes == __LINE__ - sizeof (linecount));
       g_once_init_leave (&__classes__, classes);
@@ -327,14 +328,23 @@ static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize li
       {
         const gint type = klass->type;
         const gchar* begin = input + start;
-        const gchar* value = prepare (lexer, begin, stop - start);
+        const gchar* value = NULL;
 
         switch ((JTokenType) type)
           {
+            default:
+              value = prepare (lexer, begin, stop - start);
+              break;
+
             case J_TOKEN_TYPE_BUILTIN:
             case J_TOKEN_TYPE_KEYWORD:
+              value = prepare (lexer, begin, stop - start);
               value = g_intern_string (value);
-            default: break;
+              break;
+
+            case J_TOKEN_TYPE_QUOTED:
+              value = prepare (lexer, begin + 1, stop - start - 2);
+              break;
           }
 
         const gint coloff = column + start;
@@ -414,7 +424,7 @@ static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line,
   if (added == 0 && !is_empty (lexer, input, length))
   {
     g_set_error
-    (error, J_TOKEN_ERROR, J_LEXER_ERROR_UNKNOWN_TOKEN,
+    (error, J_LEXER_ERROR, J_LEXER_ERROR_UNKNOWN_TOKEN,
      "%d: %d: unknown token %s", line, column, prepare (lexer, input, length));
     return -1;
   }

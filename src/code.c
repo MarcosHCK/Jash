@@ -19,12 +19,21 @@
 #include <code.h>
 
 G_STATIC_ASSERT (sizeof (guintptr) * 2 >= sizeof (JCode));
-G_STATIC_ASSERT (MAX_CODE < (G_MAXUINT << (sizeof (guint) * 8 - 5)));
+G_STATIC_ASSERT (J_CODE_TYPE_MAX_CODE < (G_MAXUINT >> 5));
 
+/**
+ * j_code_new: (constructor)
+ * @type: instruction code type.
+ * @argument_size: size of reserved area for instruction argument.
+ * 
+ * Creates an empty instruction.
+ * 
+ * Returns: (transfer full): an empty #JCode instance.
+ */
 JCode* j_code_new (JCodeType type, gsize argument_size)
 {
-  g_return_val_if_fail (type < MAX_CODE, NULL);
-  g_return_val_if_fail (argument_size < (G_MAXUINT << 5), NULL);
+  g_return_val_if_fail (type < J_CODE_TYPE_MAX_CODE, NULL);
+  g_return_val_if_fail (argument_size < (G_MAXUINT >> 5), NULL);
   gsize full = argument_size + sizeof (JCode);
 
   JCode* code = g_slice_alloc0 (full);
@@ -37,6 +46,16 @@ JCode* j_code_new (JCodeType type, gsize argument_size)
 return code;
 }
 
+/**
+ * j_code_new: (constructor)
+ * @type: instruction code type.
+ * @value: instruction argument value.
+ *
+ * Creates a @type instruction whose argument is an string
+ * which is copied from @value.
+ *
+ * Returns: (transfer full): a #JCode instance.
+ */
 JCode* j_code_new_string (JCodeType type, const gchar* value)
 {
   g_return_val_if_fail (value != NULL, NULL);
@@ -48,6 +67,14 @@ JCode* j_code_new_string (JCodeType type, const gchar* value)
   return code;
 }
 
+/**
+ * j_code_ref: (method)
+ * @code: a #JCode instance.
+ *
+ * Increments @code reference count (atomically).
+ *
+ * Returns: (transfer full): see description.
+ */
 JCode* j_code_ref (JCode* code)
 {
   g_return_val_if_fail (code != NULL, NULL);
@@ -55,6 +82,13 @@ JCode* j_code_ref (JCode* code)
 return (g_atomic_int_inc (&self->ref_count), self);
 }
 
+/**
+ * j_code_unref: (method)
+ * @code: a #JCode instance.
+ *
+ * Decrements @code reference count (atomically).
+ *
+ */
 void j_code_unref (JCode* code)
 {
   g_return_if_fail (code != NULL);

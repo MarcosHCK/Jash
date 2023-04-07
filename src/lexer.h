@@ -22,23 +22,7 @@
 typedef struct _JLexer JLexer;
 typedef enum _JLexerError JLexerError;
 
-#define J_TOKEN_ERROR (j_lexer_error_quark ())
-#define J_TOKEN_BUILTIN_AGAIN (g_intern_static_string ("again"))
-#define J_TOKEN_BUILTIN_CD (g_intern_static_string ("cd"))
-#define J_TOKEN_KEYWORD_ELSE (g_intern_static_string ("else"))
-#define J_TOKEN_KEYWORD_END (g_intern_static_string ("end"))
-#define J_TOKEN_BUILTIN_EXIT (g_intern_static_string ("exit"))
-#define J_TOKEN_BUILTIN_FALSE (g_intern_static_string ("false"))
-#define J_TOKEN_BUILTIN_FG (g_intern_static_string ("fg"))
-#define J_TOKEN_BUILTIN_GET (g_intern_static_string ("get"))
-#define J_TOKEN_BUILTIN_HELP (g_intern_static_string ("help"))
-#define J_TOKEN_BUILTIN_HISTORY (g_intern_static_string ("history"))
-#define J_TOKEN_KEYWORD_IF (g_intern_static_string ("if"))
-#define J_TOKEN_BUILTIN_JOBS (g_intern_static_string ("jobs"))
-#define J_TOKEN_BUILTIN_SET (g_intern_static_string ("set"))
-#define J_TOKEN_KEYWORD_THEN (g_intern_static_string ("then"))
-#define J_TOKEN_BUILTIN_TRUE (g_intern_static_string ("true"))
-#define J_TOKEN_BUILTIN_UNSET (g_intern_static_string ("unset"))
+#define J_LEXER_ERROR (j_lexer_error_quark ())
 
 #if __cplusplus
 extern "C" {

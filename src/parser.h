@@ -21,12 +21,21 @@
 #include <token.h>
 
 typedef struct _JParser JParser;
+typedef enum _JParserError JParserError;
 
 #define J_PARSER_ERROR (j_parser_error_quark ())
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+  enum _JParserError
+  {
+    J_PARSER_ERROR_FAILED,
+    J_PARSER_ERROR_UNEXPECTED_EOF,
+    J_PARSER_ERROR_EXPECTED_TOKEN,
+    J_PARSER_ERROR_UNEXPECTED_TOKEN,
+  };
 
   G_GNUC_INTERNAL GQuark j_parser_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JParser* j_parser_new ();

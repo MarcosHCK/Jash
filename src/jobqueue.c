@@ -112,8 +112,88 @@ gboolean j_job_queue_execute (JJobQueue* queue)
 return (keep);
 }
 
+static void dumpcode (JCode** codes, guint n_codes)
+{
+  guint i;
+
+  const gchar* types [] =
+    {
+      "J_CODE_TYPE_DUMP",
+      "J_CODE_TYPE_END",
+      "J_CODE_TYPE_EXEC",
+      "J_CODE_TYPE_FSI",
+      "J_CODE_TYPE_FSO",
+      "J_CODE_TYPE_FSOA",
+      "J_CODE_TYPE_GET",
+      "J_CODE_TYPE_IF",
+      "J_CODE_TYPE_IFN",
+      "J_CODE_TYPE_LF",
+      "J_CODE_TYPE_LSET",
+      "J_CODE_TYPE_LT",
+      "J_CODE_TYPE_PAP",
+      "J_CODE_TYPE_PAS",
+      "J_CODE_TYPE_PIPE",
+      "J_CODE_TYPE_PPRC",
+      "J_CODE_TYPE_PSI",
+      "J_CODE_TYPE_PSO",
+      "J_CODE_TYPE_SET",
+      "J_CODE_TYPE_SYNC",
+      "J_CODE_TYPE_USET",
+    };
+
+  G_STATIC_ASSERT (G_N_ELEMENTS (types) == J_CODE_TYPE_MAX_CODE);
+
+  for (i = 0; i < n_codes; ++i)
+    {
+      switch (codes [i]->type)
+      {
+        case J_CODE_TYPE_DUMP:
+        case J_CODE_TYPE_END:
+        case J_CODE_TYPE_LF:
+        case J_CODE_TYPE_LT:
+        case J_CODE_TYPE_PAP:
+        case J_CODE_TYPE_LSET:
+        case J_CODE_TYPE_PIPE:
+        case J_CODE_TYPE_PSI:
+        case J_CODE_TYPE_PSO:
+        case J_CODE_TYPE_SYNC:
+        case J_CODE_TYPE_PPRC:
+          g_print ("code(%i): %s ()\n", i, types [codes [i]->type]);
+          break;
+        case J_CODE_TYPE_IF:
+        case J_CODE_TYPE_IFN:
+          g_print ("code(%i): %s (%i)\n", i, types [codes [i]->type], codes [i]->int_argument);
+          break;
+        case J_CODE_TYPE_EXEC:
+        case J_CODE_TYPE_FSI:
+        case J_CODE_TYPE_FSO:
+        case J_CODE_TYPE_FSOA:
+        case J_CODE_TYPE_GET:
+        case J_CODE_TYPE_PAS:
+        case J_CODE_TYPE_SET:
+        case J_CODE_TYPE_USET:
+          g_print ("code(%i): %s (%s)\n", i, types [codes [i]->type], codes [i]->string_argument);
+          break;
+
+        default:
+          {
+            if (J_CODE_TYPE_MAX_CODE >= codes [i]->type)
+              g_assert_not_reached ();
+            else
+              {
+                /* metacode */
+                g_print ("meta(%i): J_CODE_TYPE_MAX_CODE+%i (0x%" G_GINT32_MODIFIER "x)\n", i, codes [i]->type - J_CODE_TYPE_MAX_CODE, codes [i]->uintptr_argument);
+              }
+            break;
+          }
+      }
+    }
+}
+
 void j_job_queue_add_intructions (JJobQueue* queue, JCode** codes, guint n_codes)
 {
+  dumpcode (codes, n_codes);
+  guint i;
 }
 
 void j_job_queue_push_machine (JJobQueue* queue, JMachine* machine)

@@ -57,6 +57,7 @@ jash_SOURCES=\
 	machine.c \
 	parser.c \
 	readline.c \
+	token.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \
