@@ -17,6 +17,7 @@
  */
 #include <config.h>
 #include <parser.h>
+#include <profile.h>
 
 struct _JParser
 {
@@ -37,14 +38,6 @@ enum
   COND_OR,
 };
 
-enum
-{
-  J_CODE_MARK_EXPANSION_BEGIN = J_CODE_META_MAX_META + 1,
-  J_CODE_MARK_EXPANSION_FINISH,
-  J_CODE_MARK_CHAIN_BEGIN,
-  J_CODE_MARK_CHAIN_FINISH,
-};
-
 typedef struct _Walker Walker;
 G_DEFINE_QUARK (j-parser-error-quark, j_parser_error);
 
@@ -58,8 +51,12 @@ static void profile_code (JParser* self, GError** error);
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
 #define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
 
-#define DUMPWALKERS (1)
-#define HIJACKERROR (1)
+#if DEVELOPER == 1
+# define DUMPWALKERS (1)
+# define HIJACKERROR (1)
+
+G_GNUC_INTERNAL gint _j_parser_profile_catch_leaks (GPtrArray* codes, GError** error);
+#endif // DEVELOPER
 
 JParser* j_parser_new ()
 {
@@ -100,12 +97,26 @@ JParser* j_parser_new_from_tokens (JToken* tokens, guint n_tokens, GError** erro
     }
   else
     {
-      profile_code (self, &tmperr);
-
-      if (G_UNLIKELY ((tmperr != NULL)))
+      const JParserProfiler profilers [] =
         {
-          g_propagate_error (error, tmperr);
-          _j_parser_unref0 (self);
+          j_parser_profile_inplace_expansions,
+          j_parser_profile_null_branches,
+#if DEVELOPER == 1
+          _j_parser_profile_catch_leaks,
+#endif // DEVELOPER
+        };
+
+      gint result;
+
+      for (i = 0; i < G_N_ELEMENTS (profilers); ++i)
+        {
+          if ((result = (profilers [i]) (self->codes, &tmperr)), G_UNLIKELY (tmperr == NULL))
+            i = (result != J_PARSER_PROFILER_CONTINUE) ? i : i - 1;
+          else
+            {
+              g_propagate_error (error, tmperr);
+              _j_parser_unref0 (self);
+            }
         }
     }
 return self;
@@ -214,7 +225,7 @@ return (g_ptr_array_add (walker->self->codes, code), va_end (l), code);
 #define THROW_EOS() THROW (J_PARSER_ERROR_UNEXPECTED_EOF, "%i: %i: Unexpected end of scope", locate (walker->last))
 #define THROW_UNEXPECTED(token) ({ JToken* __token = ((token)); THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%i: %i: Unexpected token '%s'", locate (__token), __token->value); })
 
-#if DEVELOPER == 1 && HIJACKERROR == 1
+#if DUMPWALKERS == 1
 
   static void dumpwalker (Walker* walker)
   {
@@ -253,19 +264,19 @@ return (g_ptr_array_add (walker->self->codes, code), va_end (l), code);
       (dumpwalker) ((walker)); \
     } \
   G_STMT_END
+#endif // DUMPWALKERS
+#if HIJACKERROR == 1
 # define g_set_error(...) \
     G_STMT_START { \
       g_printerr ("(" G_STRLOC "): here (g_set_error)!\n"); \
       (g_set_error) (__VA_ARGS__); \
     } G_STMT_END
-# define g_propagate_error(dst,src) \
+# define g_propagate_error(...) \
     G_STMT_START { \
-      GError** __dst = ((dst)); \
-      GError* __src = ((src)); \
-      g_printerr ("(" G_STRLOC "): here (g_propagate_error (0x%" G_GINT64_MODIFIER "x, 0x%" G_GINT64_MODIFIER "x))!\n", (guintptr) __dst, (guintptr) __src); \
-      (g_propagate_error) (__dst, __src); \
+      g_printerr ("(" G_STRLOC "): here (g_propagate_error)!\n"); \
+      (g_propagate_error) (__VA_ARGS__); \
     } G_STMT_END
-#endif // DEVELOPER && HIJACKERROR
+#endif // HIJACKERROR
 
 static gint detectbase (const gchar* value, const gchar** begin)
 {
@@ -514,6 +525,7 @@ static void walk_command (Walker* walker, GError** error)
 
           if (in_pipe)
             {
+              pushmetacode (walker, J_CODE_MARK_PIPE, "n");
               pushcode (walker, J_CODE_TYPE_PIPE);
               pushcode (walker, J_CODE_TYPE_PSO);
             }
@@ -987,40 +999,5 @@ static void walk_scope (Walker* walker, GError** error)
 
           default: EXCPT (THROW_UNEXPECTED (token),); break;
         }
-    }
-}
-
-static void profile_code (JParser* self, GError** error)
-{
-  guint n_codes, i;
-  JCode** codes = j_parser_get_codes (self, &n_codes);
-  GError* tmperr = NULL;
-
-  for (i = 0; i < n_codes; ++i)
-    {
-#define code_remove(index) \
-  G_STMT_START \
-      { \
-        guint __index = ((index)); \
- ; \
-        if (i >= __index) \
-          --i; \
-          --n_codes; \
- ; \
-        g_ptr_array_remove_index (self->codes, __index); \
-      } \
-  G_STMT_END
-
-      switch (codes [i]->type)
-        {
-          case J_CODE_TYPE_IF:
-          case J_CODE_TYPE_IFN:
-            {
-              if (codes [i]->int_argument == 0)
-                code_remove (i);
-              break;
-            }
-        }
-#undef code_remove
     }
 }

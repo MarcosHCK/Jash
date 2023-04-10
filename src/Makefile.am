@@ -36,6 +36,7 @@ noinst_HEADERS=\
 	lexer.h \
 	machine.h \
 	parser.h \
+	profile.h \
 	readline.h \
 	token.h \
 	$(VOID)
@@ -56,6 +57,7 @@ jash_SOURCES=\
 	lexer.c \
 	machine.c \
 	parser.c \
+	profile.c \
 	readline.c \
 	token.c \
 	$(VOID)
