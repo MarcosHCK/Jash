@@ -99,49 +99,49 @@ gboolean j_machine_execute (JMachine* machine)
   JCode* Actual_Inst = g_queue_pop_head(&(machine->instructions));
   switch(Actual_Inst->type)
   {
-    case(PSI):
+    case(J_CODE_TYPE_PSI):
       machine->proc_in = machine->pipe_r;
       break;
-    case(PSO):
+    case(J_CODE_TYPE_PSO):
       machine->proc_out = machine->pipe_w;
       break;
-    case(FSI):
+    case(J_CODE_TYPE_FSI):
       machine->pipe_r = open(Actual_Inst->string_argument);
       break;
-    case(FSO):
+    case(J_CODE_TYPE_FSO):
       machine->pipe_w = open(Actual_Inst->string_argument);
       break;
-    case(PIPE):
+    case(J_CODE_TYPE_PIPE):
       int xtr[2];
       pipe(xtr);
       machine->pipe_r = xtr[0];
       machine->pipe_w = xtr[1];
       break;
-    case(PAS):
+    case(J_CODE_TYPE_PAS):
       g_queue_push_head(&(machine->arguments), Actual_Inst->string_argument);
       break;
-    case(PAP):
+    case(J_CODE_TYPE_PAP):
       //M falta implementarlo
       break;
-    case(SET):
+    case(J_CODE_TYPE_SET):
       gchar* key = g_strdup(Actual_Inst->string_argument);
       gchar* argument = g_strdup(g_queue_pop_head(&(machine->arguments)));
       g_hash_table_insert(machine->dictionary, key, argument);
       break;
-    case(GET):
+    case(J_CODE_TYPE_GET):
       char* value = g_hash_table_lookup(machine->dictionary, Actual_Inst->string_argument);
       g_queue_push_head(&(machine->arguments), value);
       break;
-    case(USET):
+    case(J_CODE_TYPE_USET):
       g_hash_table_insert(machine->dictionary, Actual_Inst->string_argument, NULL);
       break;
-    case(DUMP):
+    case(J_CODE_TYPE_DUMP):
       value = g_queue_pop_head(&(machine->arguments));
       FILE* file = fdopen(machine->proc_out);
       fprintf(file, value);
       fclose(file);
       break;
-    case(EXEC):
+    case(J_CODE_TYPE_EXEC):
       pid_t pid_hijo = fork();
       if (pid_hijo == 0)
       {
@@ -154,7 +154,7 @@ gboolean j_machine_execute (JMachine* machine)
       }
       g_queue_free(&(machine->arguments));
       break;
-    case(SYNC):
+    case(J_CODE_TYPE_SYNC):
     int status = 0;
       if(Processes_Running(machine, &status))
         g_queue_push_head(&(machine->instructions), Actual_Inst);
