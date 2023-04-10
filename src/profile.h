@@ -18,6 +18,7 @@
 #ifndef __JASH_PROFILE__
 #define __JASH_PROFILE__ 1
 #include <code.h>
+#include <jobqueue.h>
 
 typedef enum _JCodeMark JCodeMark;
 typedef gint (*JParserProfiler) (GPtrArray* codes, GError** error);

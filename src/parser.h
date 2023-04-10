@@ -18,6 +18,7 @@
 #ifndef __JASH_PARSER__
 #define __JASH_PARSER__ 1
 #include <code.h>
+#include <jobqueue.h>
 #include <token.h>
 
 typedef struct _JParser JParser;

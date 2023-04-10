@@ -33,6 +33,8 @@ struct _Job
   JMachine* machine;
 };
 
+#define J_CODE_META(TYPE_NAME) (J_CODE_META_ ## TYPE_NAME + J_CODE_TYPE_MAX_TYPE)
+
 JJobQueue* j_job_queue_new ()
 {
   JJobQueue* queue;
@@ -194,6 +196,19 @@ void j_job_queue_add_intructions (JJobQueue* queue, JCode** codes, guint n_codes
 {
   dumpcode (codes, n_codes);
   guint i;
+
+  for (i = 0; i < n_codes; ++i)
+  if (codes [i]->type < J_CODE_META (FIRST_META))
+    ;//j_machine_push_instruction (g_queue_peek_head (&queue->jobs), codes [i]);
+  else
+    {
+      const gint type = codes [i]->type;
+
+      switch ((JCodeType) type)
+        {
+          default: g_assert_not_reached ();
+        }
+    }
 }
 
 void j_job_queue_push_machine (JJobQueue* queue, JMachine* machine)

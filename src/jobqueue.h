@@ -21,10 +21,30 @@
 #include <machine.h>
 
 typedef struct _JJobQueue JJobQueue;
+typedef enum _JCodeMetaType JCodeMetaType;
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+  /**
+   * JCodeMetaType:
+   * @J_CODE_META_CD: changes current working directory.
+   * @J_CODE_META_EXIT: quits current shell session (if there are running jobs user will be warned instead).
+   * @J_CODE_META_FG: brings a background job to foreground (if foreground job isn't running) and restarts it if it was paused.
+   * @J_CODE_META_BG: detach current foreground job and stacks it into background (also pauses it).
+   *
+   * Metacodes introduced to be understood by #JJobQueue instead of being transfered to foreground #JMachine.
+   */
+  enum _JCodeMetaType
+  {
+    J_CODE_META_FIRST_META,
+    J_CODE_META_CD,
+    J_CODE_META_EXIT,
+    J_CODE_META_FG,
+    J_CODE_META_BG,
+    J_CODE_META_MAX_META,
+  };
 
   G_GNUC_INTERNAL JJobQueue* j_job_queue_new ();
   G_GNUC_INTERNAL JJobQueue* j_job_queue_ref (JJobQueue* queue);
