@@ -198,19 +198,22 @@ static JCode* pushmetacode_va (Walker* walker, gint meta, const gchar* fmt, va_l
   if (g_str_equal (fmt, "n"))
     code = j_code_new_simple (0);
   else
+  if (g_str_equal (fmt, "b"))
+    code = j_code_new_int (0, (gint) va_arg (l, gboolean));
+  else
   if (g_str_equal (fmt, "i"))
-    code = j_code_new_int (0, va_arg (l, gint));
+    code = j_code_new_int (0, (gint) va_arg (l, gint));
   else
   if (g_str_equal (fmt, "u"))
-    code = j_code_new_uint (0, va_arg (l, guint));
+    code = j_code_new_uint (0, (guint) va_arg (l, guint));
   else
   if (g_str_equal (fmt, "s"))
-    code = j_code_new_string (0, va_arg (l, gchar*));
+    code = j_code_new_string (0, (gchar*) va_arg (l, gchar*));
 
-  code->type = J_CODE_TYPE_MAX_CODE + meta;
 #if DEVELOPER == 1
-  g_assert (J_CODE_TYPE_MAX_CODE + meta < (G_MAXUINT >> 5));
+  g_assert (5 >= g_bit_storage (J_CODE_TYPE_MAX_CODE + meta));
 #endif // DEVELOPER
+  code->type = J_CODE_TYPE_MAX_CODE + meta;
 return (g_ptr_array_add (walker->self->codes, code), code);
 }
 
@@ -723,7 +726,7 @@ static void walk_command (Walker* walker, GError** error)
               if (walker->tokens->length != 0)
                 EXCPT (THROW_UNEXPECTED (oper), g_queue_clear (&tokens2));
               else
-                pushmetacode (walker, J_CODE_META_DETACH, "n");
+                pushmetacode (walker, J_CODE_META_BG, "b", FALSE);
             }
 
           g_queue_clear (&tokens2);
