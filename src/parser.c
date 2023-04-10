@@ -21,7 +21,6 @@
 struct _JParser
 {
   guint ref_count;
-
   GPtrArray* codes;
 };
 
@@ -38,6 +37,14 @@ enum
   COND_OR,
 };
 
+enum
+{
+  J_CODE_MARK_EXPANSION_BEGIN = J_CODE_META_MAX_META + 1,
+  J_CODE_MARK_EXPANSION_FINISH,
+  J_CODE_MARK_CHAIN_BEGIN,
+  J_CODE_MARK_CHAIN_FINISH,
+};
+
 typedef struct _Walker Walker;
 G_DEFINE_QUARK (j-parser-error-quark, j_parser_error);
 
@@ -50,6 +57,9 @@ static void profile_code (JParser* self, GError** error);
 #define _g_array_unref0(var) ((var == NULL) ? NULL : (var = (g_array_unref (var), NULL)))
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
 #define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
+
+#define DUMPWALKERS (1)
+#define HIJACKERROR (1)
 
 JParser* j_parser_new ()
 {
@@ -130,22 +140,12 @@ JCode** j_parser_get_codes (JParser* parser, guint* n_codes)
 return (JCode**) self->codes->pdata;
 }
 
-#define g_set_error(...) \
-    G_STMT_START { \
-      g_printerr ("(" G_STRLOC "): here (g_set_error)!\n"); \
-      (g_set_error) (__VA_ARGS__); \
-    } G_STMT_END
-#define g_propagate_error(dst,src) \
-    G_STMT_START { \
-      GError** __dst = ((dst)); \
-      GError* __src = ((src)); \
-      g_printerr ("(" G_STRLOC "): here (g_propagate_error (0x%" G_GINT64_MODIFIER "x, 0x%" G_GINT64_MODIFIER "x))!\n", (guintptr) __dst, (guintptr) __src); \
-      (g_propagate_error) (__dst, __src); \
-    } G_STMT_END
-
-static JCode* pushcode_va (Walker* walker, JCodeType type, va_list l)
+static JCode* pushcode (Walker* walker, JCodeType type, ...)
 {
-  JCode* code = NULL;
+  JCode* code;
+  va_list l;
+
+  va_start (l, type);
 
   switch (type)
     {
@@ -178,43 +178,7 @@ static JCode* pushcode_va (Walker* walker, JCodeType type, va_list l)
         break;
       default: g_assert_not_reached ();
     }
-return (g_ptr_array_add (walker->self->codes, code), code);
-}
-
-static JCode* pushcode (Walker* walker, JCodeType type, ...)
-{
-  JCode* code;
-  va_list l;
-
-  va_start (l, type);
-  code = pushcode_va (walker, type, l);
-return (va_end (l), code);
-}
-
-static JCode* pushmetacode_va (Walker* walker, gint meta, const gchar* fmt, va_list l)
-{
-  JCode* code = NULL;
-
-  if (g_str_equal (fmt, "n"))
-    code = j_code_new_simple (0);
-  else
-  if (g_str_equal (fmt, "b"))
-    code = j_code_new_int (0, (gint) va_arg (l, gboolean));
-  else
-  if (g_str_equal (fmt, "i"))
-    code = j_code_new_int (0, (gint) va_arg (l, gint));
-  else
-  if (g_str_equal (fmt, "u"))
-    code = j_code_new_uint (0, (guint) va_arg (l, guint));
-  else
-  if (g_str_equal (fmt, "s"))
-    code = j_code_new_string (0, (gchar*) va_arg (l, gchar*));
-
-#if DEVELOPER == 1
-  g_assert (5 >= g_bit_storage (J_CODE_TYPE_MAX_CODE + meta));
-#endif // DEVELOPER
-  code->type = J_CODE_TYPE_MAX_CODE + meta;
-return (g_ptr_array_add (walker->self->codes, code), code);
+return (g_ptr_array_add (walker->self->codes, code), va_end (l), code);
 }
 
 static JCode* pushmetacode (Walker* walker, gint meta, const gchar* fmt, ...)
@@ -223,8 +187,23 @@ static JCode* pushmetacode (Walker* walker, gint meta, const gchar* fmt, ...)
   va_list l;
 
   va_start (l, fmt);
-  code = pushmetacode_va (walker, meta, fmt, l);
-return (va_end (l), code);
+
+  if (g_str_equal (fmt, "n"))
+    code = j_code_new_simple (0);
+  else if (g_str_equal (fmt, "b"))
+    code = j_code_new_int (0, (gint) va_arg (l, gboolean));
+  else if (g_str_equal (fmt, "i"))
+    code = j_code_new_int (0, (gint) va_arg (l, gint));
+  else if (g_str_equal (fmt, "u"))
+    code = j_code_new_uint (0, (guint) va_arg (l, guint));
+  else if (g_str_equal (fmt, "s"))
+    code = j_code_new_string (0, (gchar*) va_arg (l, gchar*));
+  else g_assert_not_reached ();
+#if DEVELOPER == 1
+  g_assert (5 >= g_bit_storage (J_CODE_TYPE_MAX_TYPE + meta));
+#endif // DEVELOPER
+  code->type = J_CODE_TYPE_MAX_TYPE + meta;
+return (g_ptr_array_add (walker->self->codes, code), va_end (l), code);
 }
 
 #define locate(token) token->line,token->column
@@ -235,10 +214,63 @@ return (va_end (l), code);
 #define THROW_EOS() THROW (J_PARSER_ERROR_UNEXPECTED_EOF, "%i: %i: Unexpected end of scope", locate (walker->last))
 #define THROW_UNEXPECTED(token) ({ JToken* __token = ((token)); THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%i: %i: Unexpected token '%s'", locate (__token), __token->value); })
 
-static gint detectbase (const gchar* value)
+#if DEVELOPER == 1 && HIJACKERROR == 1
+
+  static void dumpwalker (Walker* walker)
+  {
+    GList* list;
+    guint i;
+
+    const gchar* types [] =
+      {
+        "J_TOKEN_TYPE_BUILTIN",
+        "J_TOKEN_TYPE_COMMENT",
+        "J_TOKEN_TYPE_KEYWORD",
+        "J_TOKEN_TYPE_LITERAL",
+        "J_TOKEN_TYPE_OPERATOR",
+        "J_TOKEN_TYPE_SEPARATOR",
+        "J_TOKEN_TYPE_QUOTED",
+      };
+
+    for (list = g_queue_peek_head_link (walker->tokens), i = 0;
+        list != NULL;
+        list = list->next, ++i)
+      {
+        const JToken* token = list->data;
+        const gint type = token->type;
+        const gchar* value = token->value;
+              gchar* escaped = NULL;
+
+        g_printerr ("token (%i): %i: %i: '%s' (%s)\n", i, locate (token), escaped = g_strescape (value, NULL), types [type]);
+        g_free (escaped);
+      }
+  }
+
+# define dumpwalker(walker) \
+  G_STMT_START \
+    { \
+      g_printerr ("(" G_STRLOC "): here (dumpwalker!)\n"); \
+      (dumpwalker) ((walker)); \
+    } \
+  G_STMT_END
+# define g_set_error(...) \
+    G_STMT_START { \
+      g_printerr ("(" G_STRLOC "): here (g_set_error)!\n"); \
+      (g_set_error) (__VA_ARGS__); \
+    } G_STMT_END
+# define g_propagate_error(dst,src) \
+    G_STMT_START { \
+      GError** __dst = ((dst)); \
+      GError* __src = ((src)); \
+      g_printerr ("(" G_STRLOC "): here (g_propagate_error (0x%" G_GINT64_MODIFIER "x, 0x%" G_GINT64_MODIFIER "x))!\n", (guintptr) __dst, (guintptr) __src); \
+      (g_propagate_error) (__dst, __src); \
+    } G_STMT_END
+#endif // DEVELOPER && HIJACKERROR
+
+static gint detectbase (const gchar* value, const gchar** begin)
 {
   if (g_utf8_get_char (value) == (gunichar) '-')
-    return detectbase (value);
+    return detectbase (g_utf8_next_char (value), begin);
   else
     {
       gchar* n = g_utf8_next_char (value);
@@ -246,16 +278,16 @@ static gint detectbase (const gchar* value)
       gunichar c2 = g_utf8_get_char (n);
 
       if (c1 != (gunichar) '0')
-        return 10;
+        return (*begin = value, 10);
       else
         {
           switch (c2)
             {
-              case (gunichar) 'b': return 2;
-              case (gunichar) 'o': return 8;
-              case (gunichar) 'd': return 10;
-              case (gunichar) 'x': return 16;
-              default: return 10;
+              case (gunichar) 'b': return (*begin = g_utf8_next_char (n), 2);
+              case (gunichar) 'o': return (*begin = g_utf8_next_char (n), 8);
+              case (gunichar) 'd': return (*begin = g_utf8_next_char (n), 10);
+              case (gunichar) 'x': return (*begin = g_utf8_next_char (n), 16);
+              default: return (*begin = value, 10);
             }
         }
     }
@@ -263,15 +295,22 @@ static gint detectbase (const gchar* value)
 
 static gint parseint (const gchar* value, GError** error)
 {
-  gint base = detectbase (value);
+  const gchar* number = NULL;
+  const gint base = detectbase (value, &number);
   gint64 result = -1;
 
-  g_ascii_string_to_signed (value, base, G_MININT, G_MAXINT, &result, error);
+  g_ascii_string_to_signed (number, base, G_MININT, G_MAXINT, &result, error);
 return (gint) result;
 }
 
-static gint collect_va (Walker* walker, GQueue* queue, GError** error, va_list l)
+static gint collect (Walker* walker, GQueue* queue, GError** error, ...)
 {
+  GArray* untils_dyn = NULL;
+  JToken* token = NULL;
+  gint type, j, i = 0;
+  gchar* expected;
+  va_list l;
+
   struct _Until
   {
     JTokenType type;
@@ -280,10 +319,7 @@ static gint collect_va (Walker* walker, GQueue* queue, GError** error, va_list l
 
   struct _Until  untils_stat [32];
   struct _Until* untils = untils_stat;
-  GArray* untils_dyn = NULL;
-
-  gint type, j, i = 0;
-  gchar* expected;
+  va_start (l, error);
 
   while ((type = va_arg (l, gint)) >= 0)
     {
@@ -312,7 +348,7 @@ static gint collect_va (Walker* walker, GQueue* queue, GError** error, va_list l
       ++i;
     }
 
-  JToken* token;
+  va_end (l);
 
   while ((token = g_queue_pop_head (walker->tokens)) != NULL)
     {
@@ -324,23 +360,10 @@ static gint collect_va (Walker* walker, GQueue* queue, GError** error, va_list l
         expected = untils [j].expected;
 
         if (type == token->type && (expected == NULL || (expected == token->value || g_str_equal (expected, token->value))))
-          {
-            _g_array_unref0 (untils_dyn);
-            return (gint) queue->length;
-          }
+          return (_g_array_unref0 (untils_dyn), (gint) queue->length);
       }
     }
 return (THROW_EOS (), _g_array_unref0 (untils_dyn), -1);
-}
-
-static gint collect (Walker* walker, GQueue* queue, GError** error, ...)
-{
-  gint count;
-  va_list l;
-
-          va_start (l, error);
-  count = collect_va (walker, queue, error, l);
-return (va_end (l), count);
 }
 
 static void walk_args (Walker* walker, GError** error)
@@ -348,6 +371,10 @@ static void walk_args (Walker* walker, GError** error)
   GError* tmperr = NULL;
   JToken* redirection = NULL;
   JToken* token = NULL;
+
+#if DEVELOPER == 1 && DUMPWALKERS == 1
+  dumpwalker (walker);
+#endif // DEVELOPER && DUMPWALKERS
 
   while ((token = g_queue_pop_head (walker->tokens)) != NULL)
     {
@@ -365,20 +392,12 @@ static void walk_args (Walker* walker, GError** error)
                 pushcode (walker, J_CODE_TYPE_PAS, value);
               else
                 {
-                  const gchar* r1 = redirection->value;
-                  const gchar* r2 = g_utf8_next_char (r1);
-
-                  if (g_utf8_get_char (r1) == (gunichar) '<')
+                  if (redirection->value == J_TOKEN_OPERATOR_REDIRECTION_READ)
                     pushcode (walker, J_CODE_TYPE_FSI, value);
-                  else
-                  if (g_utf8_get_char (r1) == (gunichar) '>')
-                    {
-                      if (g_utf8_get_char (r2) == (gunichar) '\0')
-                        pushcode (walker, J_CODE_TYPE_FSO, value);
-                      else
-                      if (g_utf8_get_char (r2) == (gunichar) '>')
-                        pushcode (walker, J_CODE_TYPE_FSOA, value);
-                    }
+                  else if (redirection->value == J_TOKEN_OPERATOR_REDIRECTION_WRITE)
+                    pushcode (walker, J_CODE_TYPE_FSO, value);
+                  else if (redirection->value == J_TOKEN_OPERATOR_REDIRECTION_APPEND)
+                    pushcode (walker, J_CODE_TYPE_FSOA, value);
                   g_steal_pointer (&redirection);
                 }
               break;
@@ -390,12 +409,12 @@ static void walk_args (Walker* walker, GError** error)
                 || g_utf8_get_char (value) == (gunichar) '<')
                 redirection = token;
               else
-              if (g_utf8_get_char (value) == (gunichar) '`')
+              if (value == J_TOKEN_OPERATOR_EXPANSION)
                 {
                   GQueue tokens2 = G_QUEUE_INIT;
                   Walker walker2 = { walker->self, NULL, &tokens2, };
 
-                  if ((collect (walker, &tokens2, &tmperr, J_TOKEN_TYPE_OPERATOR, "`", -1)), G_UNLIKELY (tmperr != NULL))
+                  if ((collect (walker, &tokens2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1)), G_UNLIKELY (tmperr != NULL))
                     EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
                   else
                     {
@@ -432,10 +451,11 @@ static void walk_command (Walker* walker, GError** error)
   JToken* token = NULL;
 
 #define SEPARATORS \
-  J_TOKEN_TYPE_OPERATOR, "&", \
-  J_TOKEN_TYPE_OPERATOR, "|", \
-  J_TOKEN_TYPE_OPERATOR, "&&", \
-  J_TOKEN_TYPE_OPERATOR, "||" \
+  J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_DETACH, \
+  J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, \
+  J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_LOGICAL_AND, \
+  J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_LOGICAL_OR, \
+  J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_PIPE \
 
   struct
   {
@@ -444,30 +464,51 @@ static void walk_command (Walker* walker, GError** error)
     guint active : 1;
   } condition = {0};
 
+#if DEVELOPER == 1 && DUMPWALKERS == 1
+  dumpwalker (walker);
+#endif // DEVELOPER && DUMPWALKERS
+
+  pushmetacode (walker, J_CODE_MARK_CHAIN_BEGIN, "n");
+
   while ((token = g_queue_pop_head (walker->tokens)) != NULL)
     {
       GQueue tokens2 = G_QUEUE_INIT;
       Walker walker2 = { walker->self, NULL, &tokens2, };
       JToken* oper = NULL;
 
-      if ((collect (walker, &tokens2, &tmperr, SEPARATORS, -1)), G_UNLIKELY (tmperr == NULL))
-        oper = g_queue_pop_tail (&tokens2);
-      else
+      while (1)
         {
-          if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF))
-            _g_error_free0 (tmperr);
-          else
-            EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+          if ((collect (walker, &tokens2, &tmperr, SEPARATORS, -1)), G_UNLIKELY (tmperr == NULL))
+          {
+            if ((oper = g_queue_peek_tail (&tokens2))->value != J_TOKEN_OPERATOR_EXPANSION)
+              g_queue_pop_tail (&tokens2);
+            else
+              {
+                if ((collect (walker, &tokens2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1)), G_UNLIKELY (tmperr != NULL))
+                  EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+                else continue;
+              }
+          }
+        else
+          {
+            if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF))
+              _g_error_free0 (tmperr);
+            else
+              EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+          }
+
+          break;
         }
+
       G_STMT_START
         {
           const gint type = token->type;
           const gchar* value = token->value;
 
-          const gboolean in_pipe = (oper == NULL) ? FALSE : ! g_strcmp0 (oper->value, "|");
-          const gboolean in_dtch = (oper == NULL) ? FALSE : ! (in_pipe || g_strcmp0 (oper->value, "&"));
-          const gboolean in_cor = (oper == NULL) ? FALSE : ! (in_pipe || g_strcmp0 (oper->value, "||"));
-          const gboolean in_cand = (oper == NULL) ? FALSE : ! (in_cor || g_strcmp0 (oper->value, "&&"));
+          const gboolean in_pipe = (oper == NULL) ? 0 : (oper->value == J_TOKEN_OPERATOR_PIPE);
+          const gboolean in_dtch = (oper == NULL) ? 0 : (oper->value == J_TOKEN_OPERATOR_DETACH);
+          const gboolean in_cand = (oper == NULL) ? 0 : (oper->value == J_TOKEN_OPERATOR_LOGICAL_AND);
+          const gboolean in_cor = (oper == NULL) ? 0 : (oper->value == J_TOKEN_OPERATOR_LOGICAL_OR);
 
           walker2.last = g_queue_peek_tail (&tokens2);
 
@@ -524,17 +565,21 @@ static void walk_command (Walker* walker, GError** error)
                           else
                           if (tokens2.length == 1)
                             {
-                              if ((walk_args (&walker2, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                                EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+                              JToken* token2 = g_queue_pop_head (&tokens2);
+
+                              if (token2->type != J_TOKEN_TYPE_LITERAL)
+                                EXCPT (THROW_UNEXPECTED (token2), g_queue_clear (&tokens2));
                               else
                                 {
-                                  JCode* code = g_ptr_array_steal_index (walker->self->codes, walker->self->codes->len - 1);
-                                  gint result = parseint (code->string_argument, &tmperr);
+                                  gint result = parseint (token2->value, &tmperr);
 
-                                  if (G_UNLIKELY (tmperr != NULL))
-                                    EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
-                                  else
+                                  if (G_UNLIKELY (tmperr == NULL))
                                     pushmetacode (walker, J_CODE_META_EXIT, "i", result);
+                                  else
+                                    {
+                                      g_prefix_error (&tmperr, "%i: %i: ", locate (token2));
+                                      EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+                                    }
                                 }
                             }
                         } else
@@ -555,17 +600,21 @@ static void walk_command (Walker* walker, GError** error)
                           else
                           if (tokens2.length == 1)
                             {
-                              if ((walk_args (&walker2, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                                EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+                              JToken* token2 = g_queue_pop_head (&tokens2);
+
+                              if (token2->type != J_TOKEN_TYPE_LITERAL)
+                                EXCPT (THROW_UNEXPECTED (token2), g_queue_clear (&tokens2));
                               else
                                 {
-                                  JCode* code = g_ptr_array_steal_index (walker->self->codes, walker->self->codes->len - 1);
-                                  gint result = parseint (code->string_argument, &tmperr);
+                                  gint result = parseint (token2->value, &tmperr);
 
-                                  if (G_UNLIKELY (tmperr != NULL))
-                                    EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
-                                  else
+                                  if (G_UNLIKELY (tmperr == NULL))
                                     pushmetacode (walker, J_CODE_META_FG, "i", result);
+                                  else
+                                    {
+                                      g_prefix_error (&tmperr, "%i: %i: ", locate (token2));
+                                      EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
+                                    }
                                 }
                             }
                         } else
@@ -736,12 +785,15 @@ static void walk_command (Walker* walker, GError** error)
     }
 
   COND_FINISH ();
+  pushmetacode (walker, J_CODE_MARK_CHAIN_FINISH, "n");
   pushcode (walker, J_CODE_TYPE_SYNC);
 }
 
 static void walk_expansion (Walker* walker, GError** error)
 {
   GError* tmperr = NULL;
+
+  pushmetacode (walker, J_CODE_MARK_EXPANSION_BEGIN, "n");
 
   if ((walk_scope (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
     EXCPT (RETHROW (tmperr),);
@@ -759,6 +811,7 @@ static void walk_expansion (Walker* walker, GError** error)
               g_ptr_array_insert (codes, length - i - 2, j_code_new_simple (J_CODE_TYPE_PSO));
               g_ptr_array_insert (codes, length - i - 2, j_code_new_simple (J_CODE_TYPE_PIPE));
               pushcode (walker, J_CODE_TYPE_DUMP);
+              pushmetacode (walker, J_CODE_MARK_EXPANSION_FINISH, "n");
               break;
             }
         }
@@ -841,6 +894,10 @@ static void walk_scope (Walker* walker, GError** error)
   GError* tmperr = NULL;
   JToken* token = NULL;
 
+#if DEVELOPER == 1 && DUMPWALKERS == 1
+  dumpwalker (walker);
+#endif // DEVELOPER && DUMPWALKERS
+
   while ((token = g_queue_pop_head (walker->tokens)) != NULL)
     {
       const gint type = token->type;
@@ -900,14 +957,14 @@ static void walk_scope (Walker* walker, GError** error)
 
           case J_TOKEN_TYPE_OPERATOR:
             {
-              if (g_utf8_get_char (value) != (gunichar) '`')
+              if (value != J_TOKEN_OPERATOR_EXPANSION)
                 EXCPT (THROW_UNEXPECTED (token),);
               else
                 {
                   GQueue tokens2 = G_QUEUE_INIT;
                   Walker walker2 = { walker->self, NULL, &tokens2, };
 
-                  if ((collect (walker, &tokens2, &tmperr, J_TOKEN_TYPE_OPERATOR, "`", -1)), G_UNLIKELY (tmperr != NULL))
+                  if ((collect (walker, &tokens2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1)), G_UNLIKELY (tmperr != NULL))
                     EXCPT (RETHROW (tmperr), g_queue_clear (&tokens2));
                   else
                     {

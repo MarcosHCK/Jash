@@ -122,7 +122,7 @@ extern "C" {
     J_CODE_TYPE_SET,
     J_CODE_TYPE_SYNC,
     J_CODE_TYPE_USET,
-    J_CODE_TYPE_MAX_CODE,
+    J_CODE_TYPE_MAX_TYPE,
   };
 
   /**
@@ -140,6 +140,7 @@ extern "C" {
     J_CODE_META_EXIT,
     J_CODE_META_FG,
     J_CODE_META_BG,
+    J_CODE_META_MAX_META,
   };
 
   G_GNUC_INTERNAL JCode* j_code_new (JCodeType type, gsize argument_size);

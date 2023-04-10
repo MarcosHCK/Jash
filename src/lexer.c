@@ -332,18 +332,18 @@ static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize li
 
         switch ((JTokenType) type)
           {
-            default:
+            case J_TOKEN_TYPE_COMMENT:
+            case J_TOKEN_TYPE_LITERAL:
               value = prepare (lexer, begin, stop - start);
-              break;
-
-            case J_TOKEN_TYPE_BUILTIN:
-            case J_TOKEN_TYPE_KEYWORD:
-              value = prepare (lexer, begin, stop - start);
-              value = g_intern_string (value);
               break;
 
             case J_TOKEN_TYPE_QUOTED:
               value = prepare (lexer, begin + 1, stop - start - 2);
+              break;
+
+            default:
+              value = prepare (lexer, begin, stop - start);
+              value = g_intern_string (value);
               break;
           }
 

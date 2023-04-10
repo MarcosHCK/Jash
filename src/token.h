@@ -22,22 +22,32 @@
 typedef struct _JToken JToken;
 typedef enum _JTokenType JTokenType;
 
-#define J_TOKEN_BUILTIN_AGAIN (j_builtin_intern_string_again ())
-#define J_TOKEN_BUILTIN_CD (j_builtin_intern_string_cd ())
-#define J_TOKEN_KEYWORD_ELSE (j_keyword_intern_string_else ())
-#define J_TOKEN_KEYWORD_END (j_keyword_intern_string_end ())
-#define J_TOKEN_BUILTIN_EXIT (j_builtin_intern_string_exit ())
-#define J_TOKEN_BUILTIN_FALSE (j_builtin_intern_string_false ())
-#define J_TOKEN_BUILTIN_FG (j_builtin_intern_string_fg ())
-#define J_TOKEN_BUILTIN_GET (j_builtin_intern_string_get ())
-#define J_TOKEN_BUILTIN_HELP (j_builtin_intern_string_help ())
-#define J_TOKEN_BUILTIN_HISTORY (j_builtin_intern_string_history ())
-#define J_TOKEN_KEYWORD_IF (j_keyword_intern_string_if ())
-#define J_TOKEN_BUILTIN_JOBS (j_builtin_intern_string_jobs ())
-#define J_TOKEN_BUILTIN_SET (j_builtin_intern_string_set ())
-#define J_TOKEN_KEYWORD_THEN (j_keyword_intern_string_then ())
-#define J_TOKEN_BUILTIN_TRUE (j_builtin_intern_string_true ())
-#define J_TOKEN_BUILTIN_UNSET (j_builtin_intern_string_unset ())
+#define J_TOKEN_BUILTIN_AGAIN (j_token_builtin_again_intern_string ())
+#define J_TOKEN_BUILTIN_CD (j_token_builtin_cd_intern_string ())
+#define J_TOKEN_BUILTIN_EXIT (j_token_builtin_exit_intern_string ())
+#define J_TOKEN_BUILTIN_FALSE (j_token_builtin_false_intern_string ())
+#define J_TOKEN_BUILTIN_FG (j_token_builtin_fg_intern_string ())
+#define J_TOKEN_BUILTIN_GET (j_token_builtin_get_intern_string ())
+#define J_TOKEN_BUILTIN_HELP (j_token_builtin_help_intern_string ())
+#define J_TOKEN_BUILTIN_HISTORY (j_token_builtin_history_intern_string ())
+#define J_TOKEN_BUILTIN_JOBS (j_token_builtin_jobs_intern_string ())
+#define J_TOKEN_BUILTIN_SET (j_token_builtin_set_intern_string ())
+#define J_TOKEN_BUILTIN_TRUE (j_token_builtin_true_intern_string ())
+#define J_TOKEN_BUILTIN_UNSET (j_token_builtin_unset_intern_string ())
+#define J_TOKEN_KEYWORD_ELSE (j_token_keyword_else_intern_string ())
+#define J_TOKEN_KEYWORD_END (j_token_keyword_end_intern_string ())
+#define J_TOKEN_KEYWORD_IF (j_token_keyword_if_intern_string ())
+#define J_TOKEN_KEYWORD_THEN (j_token_keyword_then_intern_string ())
+#define J_TOKEN_OPERATOR_DETACH (j_token_operator_detach_intern_string ())
+#define J_TOKEN_OPERATOR_EXPANSION (j_token_operator_expansion_intern_string ())
+#define J_TOKEN_OPERATOR_LOGICAL_AND (j_token_operator_logical_and_intern_string ())
+#define J_TOKEN_OPERATOR_LOGICAL_OR (j_token_operator_logical_or_intern_string ())
+#define J_TOKEN_OPERATOR_PIPE (j_token_operator_pipe_intern_string ())
+#define J_TOKEN_OPERATOR_REDIRECTION_APPEND (j_token_operator_redirection_append_intern_string ())
+#define J_TOKEN_OPERATOR_REDIRECTION_READ (j_token_operator_redirection_read_intern_string ())
+#define J_TOKEN_OPERATOR_REDIRECTION_WRITE (j_token_operator_redirection_write_intern_string ())
+#define J_TOKEN_SEPARATOR_CHAIN (j_token_separator_chain_intern_string ())
+#define J_TOKEN_SEPARATOR_NEWLINE (j_token_separator_newline_intern_string ())
 
 #if __cplusplus
 extern "C" {
@@ -62,22 +72,32 @@ extern "C" {
     J_TOKEN_TYPE_QUOTED,
   };
 
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_again (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_cd (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_keyword_intern_string_else (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_keyword_intern_string_end (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_exit (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_false (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_fg (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_get (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_help (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_history (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_keyword_intern_string_if (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_jobs (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_set (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_keyword_intern_string_then (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_true (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL const gchar* j_builtin_intern_string_unset (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_again_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_cd_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_exit_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_false_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_fg_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_get_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_help_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_history_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_jobs_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_set_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_true_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_builtin_unset_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_keyword_else_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_keyword_end_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_keyword_if_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_keyword_then_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_detach_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_expansion_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_logical_and_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_logical_or_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_pipe_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_redirection_append_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_redirection_read_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_operator_redirection_write_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_separator_chain_intern_string (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL const gchar* j_token_separator_newline_intern_string (void) G_GNUC_CONST;
 
 #if __cplusplus
 }

@@ -19,7 +19,7 @@
 #include <code.h>
 
 G_STATIC_ASSERT (sizeof (guintptr) * 2 >= sizeof (JCode));
-G_STATIC_ASSERT (J_CODE_TYPE_MAX_CODE < (G_MAXUINT >> 5));
+G_STATIC_ASSERT (J_CODE_TYPE_MAX_TYPE < (G_MAXUINT >> 5));
 
 /**
  * j_code_new: (constructor)
@@ -32,7 +32,7 @@ G_STATIC_ASSERT (J_CODE_TYPE_MAX_CODE < (G_MAXUINT >> 5));
  */
 JCode* j_code_new (JCodeType type, gsize argument_size)
 {
-  g_return_val_if_fail (type < J_CODE_TYPE_MAX_CODE, NULL);
+  g_return_val_if_fail (type < J_CODE_TYPE_MAX_TYPE, NULL);
   g_return_val_if_fail (argument_size < (G_MAXUINT >> 5), NULL);
   gsize full = argument_size + sizeof (JCode);
 

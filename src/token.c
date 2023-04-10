@@ -19,7 +19,7 @@
 #include <token.h>
 
 #define _DEFINE_INTERN_FULL(type,name,value) \
-  const gchar* j_ ## type ## _intern_string_ ## name (void) \
+  const gchar* j_token_ ## type ## _ ## name ## _intern_string (void) \
     { \
       static gsize __value__ = 0; \
       if (g_once_init_enter (&__value__)) \
@@ -35,17 +35,27 @@
 
 _DEFINE_INTERN (builtin, again);
 _DEFINE_INTERN (builtin, cd);
-_DEFINE_INTERN (keyword, else);
-_DEFINE_INTERN_FULL (keyword, end, fi);
 _DEFINE_INTERN (builtin, exit);
 _DEFINE_INTERN (builtin, false);
 _DEFINE_INTERN (builtin, fg);
 _DEFINE_INTERN (builtin, get);
 _DEFINE_INTERN (builtin, help);
 _DEFINE_INTERN (builtin, history);
-_DEFINE_INTERN (keyword, if);
 _DEFINE_INTERN (builtin, jobs);
 _DEFINE_INTERN (builtin, set);
-_DEFINE_INTERN (keyword, then);
 _DEFINE_INTERN (builtin, true);
 _DEFINE_INTERN (builtin, unset);
+_DEFINE_INTERN (keyword, else);
+_DEFINE_INTERN_FULL (keyword, end, fi);
+_DEFINE_INTERN (keyword, if);
+_DEFINE_INTERN (keyword, then);
+_DEFINE_INTERN_FULL (operator, detach, &);
+_DEFINE_INTERN_FULL (operator, expansion, `);
+_DEFINE_INTERN_FULL (operator, logical_and, &&);
+_DEFINE_INTERN_FULL (operator, logical_or, ||);
+_DEFINE_INTERN_FULL (operator, pipe, |);
+_DEFINE_INTERN_FULL (operator, redirection_append, >>);
+_DEFINE_INTERN_FULL (operator, redirection_read, <);
+_DEFINE_INTERN_FULL (operator, redirection_write, >);
+_DEFINE_INTERN_FULL (separator, chain, ;);
+_DEFINE_INTERN_FULL (separator, newline, \n);

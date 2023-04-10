@@ -141,7 +141,7 @@ static void dumpcode (JCode** codes, guint n_codes)
       "J_CODE_TYPE_USET",
     };
 
-  G_STATIC_ASSERT (G_N_ELEMENTS (types) == J_CODE_TYPE_MAX_CODE);
+  G_STATIC_ASSERT (G_N_ELEMENTS (types) == J_CODE_TYPE_MAX_TYPE);
 
   for (i = 0; i < n_codes; ++i)
     {
@@ -177,12 +177,12 @@ static void dumpcode (JCode** codes, guint n_codes)
 
         default:
           {
-            if (J_CODE_TYPE_MAX_CODE >= codes [i]->type)
+            if (J_CODE_TYPE_MAX_TYPE >= codes [i]->type)
               g_assert_not_reached ();
             else
               {
                 /* metacode */
-                g_print ("meta(%i): J_CODE_TYPE_MAX_CODE+%i (0x%" G_GINT32_MODIFIER "x)\n", i, codes [i]->type - J_CODE_TYPE_MAX_CODE, codes [i]->uintptr_argument);
+                g_print ("meta(%i): J_CODE_TYPE_MAX_CODE+%i (0x%" G_GINT32_MODIFIER "x)\n", i, codes [i]->type - J_CODE_TYPE_MAX_TYPE, codes [i]->uintptr_argument);
               }
             break;
           }
