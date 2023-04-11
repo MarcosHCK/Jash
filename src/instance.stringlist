@@ -31,5 +31,4 @@ struct _JInstanceIndex {};
 help, j_instance_help
 history, j_instance_history
 jash, j_instance_shell
-jobs, j_instance_jobs
 sh, j_instance_shell

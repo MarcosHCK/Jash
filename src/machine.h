@@ -21,19 +21,29 @@
 #include <code.h>
 
 typedef struct _JMachine JMachine;
+typedef enum _JMachineError JMachineError;
+
+#define J_MACHINE_ERROR (j_machine_error_quark ())
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
+  enum _JMachineError
+  {
+    J_MACHINE_ERROR_FAILED,
+    J_MACHINE_ERROR_BG,
+    J_MACHINE_ERROR_EXIT,
+  };
+
+  G_GNUC_INTERNAL GQuark j_machine_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JMachine* j_machine_new ();
   G_GNUC_INTERNAL JMachine* j_machine_ref (JMachine* machine);
   G_GNUC_INTERNAL void j_machine_unref (JMachine* machine);
   G_GNUC_INTERNAL void j_machine_push_instruction (JMachine* machine, JCode* code);
   G_GNUC_INTERNAL void j_machine_push_instructions (JMachine* machine, JCode** codes, guint n_codes);
-  G_GNUC_INTERNAL gboolean j_machine_execute (JMachine* machine);
-  G_GNUC_INTERNAL void Get_Arguments (JMachine* machine, char* args[]);
-  G_GNUC_INTERNAL gboolean Processes_Running(JMachine* machine, int status);
+  G_GNUC_INTERNAL gboolean j_machine_has_instructions (JMachine* machine);
+  G_GNUC_INTERNAL gboolean j_machine_execute (JMachine* machine, GError** error);
 
 #if __cplusplus
 }

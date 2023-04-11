@@ -42,12 +42,7 @@ int j_instance_history (int argc, char* argv [])
   g_assert_not_reached ();
 }
 
-int j_instance_jobs (int argc, char* argv [])
-{
-  g_assert_not_reached ();
-}
-
-static void prepare (JJobQueue* jobs, const gchar* data, gboolean data_is_file, GError** error)
+static void execute (JJobQueue* jobs, const gchar* data, gboolean data_is_file, GError** error)
 {
   GError* tmperr = NULL;
   JLexer* lexer = NULL;
@@ -82,8 +77,14 @@ static void prepare (JJobQueue* jobs, const gchar* data, gboolean data_is_file, 
     }
 
   codes = j_parser_get_codes (parser, &n_codes);
-  good = (j_job_queue_add_intructions (jobs, codes, n_codes), 0);
+  good = (j_job_queue_execute (jobs, codes, n_codes, &tmperr), 0);
   _j_parser_unref0 (parser);
+
+  if (G_UNLIKELY (tmperr != NULL))
+    {
+      g_propagate_error (error, tmperr);
+      return;
+    }
 }
 
 int j_instance_shell (int argc, char* argv[])
@@ -142,7 +143,7 @@ int j_instance_shell (int argc, char* argv[])
     if (argc > 1)
       {
         for (i = 1; i < argc && !tmperr; i++)
-          prepare (jobs, argv [i], TRUE, &tmperr);
+          execute (jobs, argv [i], TRUE, &tmperr);
           no_interactive = TRUE;
 #ifdef G_OS_WIN32
         g_strfreev (argv);
@@ -169,13 +170,12 @@ int j_instance_shell (int argc, char* argv[])
               }
           }
 
-        prepare (jobs, line = j_readline_getline (readline), FALSE, &tmperr);
+        execute (jobs, line = j_readline_getline (readline), FALSE, &tmperr);
         g_free (line);
       }
 
     if (G_UNLIKELY (tmperr != NULL))
       {
-        ++result;
         const gint code = tmperr->code;
         const gchar* domain = g_quark_to_string (tmperr->domain);
         const gchar* message = tmperr->message;
@@ -184,10 +184,6 @@ int j_instance_shell (int argc, char* argv[])
         _g_error_free0 (tmperr);
         continue;
       }
-
-    do
-      g_thread_yield ();
-    while (j_job_queue_execute (jobs));
   } while (!no_interactive);
 
   if (readline != NULL)

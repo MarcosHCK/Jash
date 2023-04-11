@@ -35,7 +35,6 @@ extern "C" {
   G_GNUC_INTERNAL const JInstanceIndex* j_instance_index_lookup (const char *str, size_t len);
   G_GNUC_INTERNAL int j_instance_help (int argc, char* argv []);
   G_GNUC_INTERNAL int j_instance_history (int argc, char* argv []);
-  G_GNUC_INTERNAL int j_instance_jobs (int argc, char* argv []);
   G_GNUC_INTERNAL int j_instance_shell (int argc, char* argv []);
 
 #if __cplusplus

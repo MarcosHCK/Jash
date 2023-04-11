@@ -99,7 +99,6 @@ JParser* j_parser_new_from_tokens (JToken* tokens, guint n_tokens, GError** erro
     {
       const JParserProfiler profilers [] =
         {
-          j_parser_profile_inplace_expansions,
           j_parser_profile_null_branches,
 #if DEVELOPER == 1
           _j_parser_profile_catch_leaks,
@@ -479,8 +478,6 @@ static void walk_command (Walker* walker, GError** error)
   dumpwalker (walker);
 #endif // DEVELOPER && DUMPWALKERS
 
-  pushmetacode (walker, J_CODE_MARK_CHAIN_BEGIN, "n");
-
   while ((token = g_queue_pop_head (walker->tokens)) != NULL)
     {
       GQueue tokens2 = G_QUEUE_INIT;
@@ -525,7 +522,6 @@ static void walk_command (Walker* walker, GError** error)
 
           if (in_pipe)
             {
-              pushmetacode (walker, J_CODE_MARK_PIPE, "n");
               pushcode (walker, J_CODE_TYPE_PIPE);
               pushcode (walker, J_CODE_TYPE_PSO);
             }
@@ -536,8 +532,7 @@ static void walk_command (Walker* walker, GError** error)
                 {
                   if (value == J_TOKEN_BUILTIN_AGAIN
                     || value == J_TOKEN_BUILTIN_HELP
-                    || value == J_TOKEN_BUILTIN_HISTORY
-                    || value == J_TOKEN_BUILTIN_JOBS)
+                    || value == J_TOKEN_BUILTIN_HISTORY)
                     {
                       pushcode (walker, J_CODE_TYPE_PAS, value);
 
@@ -629,6 +624,13 @@ static void walk_command (Walker* walker, GError** error)
                                     }
                                 }
                             }
+                        } else
+                      if (value == J_TOKEN_BUILTIN_JOBS)
+                        {
+                          if (tokens2.length > 0)
+                            EXCPT (THROW_UNEXPECTED (g_queue_pop_head (&tokens2)), g_queue_clear (&tokens2));
+                          else
+                            pushmetacode (walker, J_CODE_META_JOBS, "n");
                         } else
                       if (value == J_TOKEN_BUILTIN_GET)
                         {
@@ -797,15 +799,12 @@ static void walk_command (Walker* walker, GError** error)
     }
 
   COND_FINISH ();
-  pushmetacode (walker, J_CODE_MARK_CHAIN_FINISH, "n");
   pushcode (walker, J_CODE_TYPE_SYNC);
 }
 
 static void walk_expansion (Walker* walker, GError** error)
 {
   GError* tmperr = NULL;
-
-  pushmetacode (walker, J_CODE_MARK_EXPANSION_BEGIN, "n");
 
   if ((walk_scope (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
     EXCPT (RETHROW (tmperr),);
@@ -823,7 +822,6 @@ static void walk_expansion (Walker* walker, GError** error)
               g_ptr_array_insert (codes, length - i - 2, j_code_new_simple (J_CODE_TYPE_PSO));
               g_ptr_array_insert (codes, length - i - 2, j_code_new_simple (J_CODE_TYPE_PIPE));
               pushcode (walker, J_CODE_TYPE_DUMP);
-              pushmetacode (walker, J_CODE_MARK_EXPANSION_FINISH, "n");
               break;
             }
         }

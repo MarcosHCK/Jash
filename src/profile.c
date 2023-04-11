@@ -53,26 +53,6 @@ static void j_code_array_iter_remove (JCodeArrayIter* iter, guint index)
 #define j_code_array_iter_get_index(iter) ({ JCodeArrayIter* __iter = ((iter)); __iter->current; })
 #define j_code_array_iter_remove_current(iter) ({ JCodeArrayIter* __iter = ((iter)); j_code_array_iter_remove (__iter, __iter->current); })
 
-gint j_parser_profile_inplace_expansions (GPtrArray* codes, GError** error)
-{
-  JCodeArrayIter iter = J_CODE_ARRAY_ITER_INIT (codes);
-  JCode* code = NULL;
-  GError* tmperr = NULL;
-
-  while (j_code_array_iter_next (&iter, &code))
-  switch (code->type)
-    {
-      case J_CODE_MARK (PIPE):
-      case J_CODE_MARK (CHAIN_BEGIN):
-      case J_CODE_MARK (CHAIN_FINISH):
-      case J_CODE_MARK (EXPANSION_BEGIN):
-      case J_CODE_MARK (EXPANSION_FINISH):
-        j_code_array_iter_remove_current (&iter);
-        break;
-    }
-return J_PARSER_PROFILER_FINISH;
-}
-
 gint j_parser_profile_null_branches (GPtrArray* codes, GError** error)
 {
   JCodeArrayIter iter = J_CODE_ARRAY_ITER_INIT (codes);

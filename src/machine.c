@@ -16,11 +16,11 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
+#include <fdchannel.h>
 #include <machine.h>
-#include<stdio.h>
-#include<unistd.h>
-#include<sys/types.h>
-#include<sys/wait.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 struct _JMachine
 {
@@ -34,11 +34,12 @@ struct _JMachine
   GQueue instructions;
   GQueue arguments;
   GQueue flags;
+  GHashTable* variables;
+  GBytes* empty_var;
   GList* children;
-
-  //M gustaria poder hacer q esta HashTable fuera privada
-  GHashTable* dictionary;
 };
+
+G_DEFINE_QUARK (j-machine-error-quark, j_machine_error);
 
 JMachine* j_machine_new ()
 {
@@ -49,12 +50,13 @@ JMachine* j_machine_new ()
   self->pipe_w = -1;
   self->proc_in = -1;
   self->proc_out = -1;
+  self->variables = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
+  self->empty_var = g_bytes_new_static ("", 1);
   self->children = NULL;
 
   g_queue_init (&self->instructions);
   g_queue_init (&self->arguments);
   g_queue_init (&self->flags);
-  self->dictionary = g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
 return self;
 }
 
@@ -62,9 +64,7 @@ JMachine* j_machine_ref (JMachine* machine)
 {
   g_return_val_if_fail (machine != NULL, NULL);
   JMachine* self = (machine);
-
-  g_atomic_int_inc (&self->ref_count);
-    return machine;
+return (g_atomic_int_inc (&self->ref_count), machine);
 }
 
 void j_machine_unref (JMachine* machine)
@@ -75,6 +75,9 @@ void j_machine_unref (JMachine* machine)
   if (g_atomic_int_dec_and_test (&self->ref_count))
     {
       g_list_free (self->children);
+      g_bytes_unref (self->empty_var);
+      g_hash_table_remove_all (self->variables);
+      g_hash_table_unref (self->variables);
       g_queue_clear (&self->flags);
       g_queue_clear_full (&self->arguments, (GDestroyNotify) g_free);
       g_queue_clear_full (&self->instructions, (GDestroyNotify) j_code_unref);
@@ -84,102 +87,106 @@ void j_machine_unref (JMachine* machine)
 
 void j_machine_push_instruction (JMachine* machine, JCode* code)
 {
-  g_queue_push_tail(machine, code);
+  g_return_if_fail (machine != NULL);
+  g_return_if_fail (code != NULL);
+  JMachine* self = (machine);
+
+  g_queue_push_tail (& self->instructions, j_code_ref (code));
 }
 
-void j_machine_push_instructions (JMachine* machine, JCode* codes, guint n_codes)
+void j_machine_push_instructions (JMachine* machine, JCode** codes, guint n_codes)
 {
-  for (unsigned int i = 0; i < n_codes; i++)
-    g_queue_push_tail(&(machine->instructions), &codes[i]);
+  g_return_if_fail (machine != NULL);
+  g_return_if_fail (codes != NULL);
+  JMachine* self = (machine);
+  guint i;
+
+  for (i = 0; i < n_codes; i++)
+    {
+      GQueue* queue = & self->instructions;
+      JCode* code = codes [i];
+
+      g_queue_push_tail (queue, j_code_ref (code));
+    }
 }
 
-gboolean j_machine_execute (JMachine* machine)
+gboolean j_machine_has_instructions (JMachine* machine)
 {
-  if(machine->instructions.length == 0)return TRUE;
-  JCode* Actual_Inst = g_queue_pop_head(&(machine->instructions));
-  switch(Actual_Inst->type)
-  {
-    case(J_CODE_TYPE_PSI):
-      machine->proc_in = machine->pipe_r;
-      break;
-    case(J_CODE_TYPE_PSO):
-      machine->proc_out = machine->pipe_w;
-      break;
-    case(J_CODE_TYPE_FSI):
-      machine->pipe_r = open(Actual_Inst->string_argument);
-      break;
-    case(J_CODE_TYPE_FSO):
-      machine->pipe_w = open(Actual_Inst->string_argument);
-      break;
-    case(J_CODE_TYPE_PIPE):
-      int xtr[2];
-      pipe(xtr);
-      machine->pipe_r = xtr[0];
-      machine->pipe_w = xtr[1];
-      break;
-    case(J_CODE_TYPE_PAS):
-      g_queue_push_head(&(machine->arguments), Actual_Inst->string_argument);
-      break;
-    case(J_CODE_TYPE_PAP):
-      //M falta implementarlo
-      break;
-    case(J_CODE_TYPE_SET):
-      gchar* key = g_strdup(Actual_Inst->string_argument);
-      gchar* argument = g_strdup(g_queue_pop_head(&(machine->arguments)));
-      g_hash_table_insert(machine->dictionary, key, argument);
-      break;
-    case(J_CODE_TYPE_GET):
-      char* value = g_hash_table_lookup(machine->dictionary, Actual_Inst->string_argument);
-      g_queue_push_head(&(machine->arguments), value);
-      break;
-    case(J_CODE_TYPE_USET):
-      g_hash_table_insert(machine->dictionary, Actual_Inst->string_argument, NULL);
-      break;
-    case(J_CODE_TYPE_DUMP):
-      value = g_queue_pop_head(&(machine->arguments));
-      FILE* file = fdopen(machine->proc_out);
-      fprintf(file, value);
-      fclose(file);
-      break;
-    case(J_CODE_TYPE_EXEC):
-      pid_t pid_hijo = fork();
-      if (pid_hijo == 0)
-      {
-        char** args;
-        Get_Arguments(machine, args);
-        execvp(Actual_Inst->string_argument, args);
-      }else
-      {
-        g_list_append(machine->children, pid_hijo);
-      }
-      g_queue_free(&(machine->arguments));
-      break;
-    case(J_CODE_TYPE_SYNC):
-    int status = 0;
-      if(Processes_Running(machine, &status))
-        g_queue_push_head(&(machine->instructions), Actual_Inst);
-        //si se borra d la cola d instrucciones con el pop a lo mejor esto se destruye
-        break;
-  }
-  return (machine->instructions.length == 0);
+  g_return_val_if_fail (machine != NULL, FALSE);
+  JMachine* self = (machine);
+return (g_queue_get_length (& self->instructions) > 0);
 }
-void Get_Arguments(JMachine* machine, char* args[])
+
+gboolean j_machine_execute (JMachine* machine, GError** error)
 {
-  GQueue* pila = &(machine->arguments);
-  int n = pila->length;
-  args = (char**)malloc(n*sizeof(char*));
-  for(int i = 0; i < n; i++)
-    //1- El metodo g_queue_peek_nth es 0indexed o 1indexed?
-    //2- El metodo g_queue_peek_nth es O(1) o O(n)?
-    args[i] = g_queue_peek_nth(pila, i + 1);
-}
-gboolean Processes_Running(JMachine* machine, int status)
-{
-  pid_t pid;
-  for(GList* elem = machine->children; elem; elem = elem->next)
-  {
-    pid = elem->data;
-    if(!waitpid(pid, &status, WNOHANG))return TRUE;
-  }
-  return FALSE;
+  g_return_val_if_fail (machine != NULL, FALSE);
+  JMachine* self = (machine);
+  JCode* code = NULL;
+
+  if ((code = g_queue_peek_head (& self->instructions)) != NULL)
+    {
+      if (code->type == J_CODE_TYPE_SYNC)
+        {
+          GList* list = NULL;
+          gint return_code;
+          pid_t pid_;
+
+          for (list = self->children; list; list = list->next)
+            {
+              const gpointer ptr = list->data;
+              const gint pid = GPOINTER_TO_INT (ptr);
+
+              if ((pid_ = waitpid (pid, &return_code, WNOHANG)) < 0)
+                {
+                  int e = errno;
+
+                  g_set_error_literal (error, j_machine_error_quark (), e, g_strerror (e));
+                  return FALSE;
+                }
+              else
+                {
+                  if (WIFEXITED (return_code) || WIFSIGNALED (return_code))
+                    {
+
+                    }
+                }
+            }
+
+          g_queue_pop_head (& self->instructions);
+          return j_machine_execute (self, error);
+        }
+      else
+        {
+          while ((code = g_queue_peek_head (& self->instructions)) != NULL)
+            {
+              switch ((JCodeType) code->type)
+                {
+                  case J_CODE_TYPE_DUMP: g_printerr ("instruction 'J_CODE_TYPE_DUMP'\n"); break;
+                  case J_CODE_TYPE_END: g_printerr ("instruction 'J_CODE_TYPE_END'\n"); break;
+                  case J_CODE_TYPE_EXEC: g_printerr ("instruction 'J_CODE_TYPE_EXEC' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_FSI: g_printerr ("instruction 'J_CODE_TYPE_FSI' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_FSO: g_printerr ("instruction 'J_CODE_TYPE_FSO' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_FSOA: g_printerr ("instruction 'J_CODE_TYPE_FSOA' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_GET: g_printerr ("instruction 'J_CODE_TYPE_GET' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_IF: g_printerr ("instruction 'J_CODE_TYPE_IF' %i\n", code->int_argument); break;
+                  case J_CODE_TYPE_IFN: g_printerr ("instruction 'J_CODE_TYPE_IFN' %i\n", code->int_argument); break;
+                  case J_CODE_TYPE_LF: g_printerr ("instruction 'J_CODE_TYPE_LF'\n"); break;
+                  case J_CODE_TYPE_LSET: g_printerr ("instruction 'J_CODE_TYPE_LSET' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_LT: g_printerr ("instruction 'J_CODE_TYPE_LT'\n"); break;
+                  case J_CODE_TYPE_PAP: g_printerr ("instruction 'J_CODE_TYPE_PAP'\n"); break;
+                  case J_CODE_TYPE_PAS: g_printerr ("instruction 'J_CODE_TYPE_PAS' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_PIPE: g_printerr ("instruction 'J_CODE_TYPE_PIPE'\n"); break;
+                  case J_CODE_TYPE_PPRC: g_printerr ("instruction 'J_CODE_TYPE_PPRC'\n"); break;
+                  case J_CODE_TYPE_PSI: g_printerr ("instruction 'J_CODE_TYPE_PSI'\n"); break;
+                  case J_CODE_TYPE_PSO: g_printerr ("instruction 'J_CODE_TYPE_PSO'\n"); break;
+                  case J_CODE_TYPE_SET: g_printerr ("instruction 'J_CODE_TYPE_SET' '%s'\n", code->string_argument); break;
+                  case J_CODE_TYPE_SYNC: g_printerr ("instruction 'J_CODE_TYPE_SYNC'\n"); return TRUE;
+                  case J_CODE_TYPE_USET: g_printerr ("instruction 'J_CODE_TYPE_USET'\n"); break;
+                }
+
+              g_queue_pop_head (& self->instructions);
+            }
+        }
+    }
+return (g_queue_get_length (&self->instructions) > 0);
 }

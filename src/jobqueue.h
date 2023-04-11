@@ -32,6 +32,7 @@ extern "C" {
    * @J_CODE_META_CD: changes current working directory.
    * @J_CODE_META_EXIT: quits current shell session (if there are running jobs user will be warned instead).
    * @J_CODE_META_FG: brings a background job to foreground (if foreground job isn't running) and restarts it if it was paused.
+   * @J_CODE_META_JOBS: prints currently executing jobs.
    * @J_CODE_META_BG: detach current foreground job and stacks it into background (also pauses it).
    *
    * Metacodes introduced to be understood by #JJobQueue instead of being transfered to foreground #JMachine.
@@ -42,6 +43,7 @@ extern "C" {
     J_CODE_META_CD,
     J_CODE_META_EXIT,
     J_CODE_META_FG,
+    J_CODE_META_JOBS,
     J_CODE_META_BG,
     J_CODE_META_MAX_META,
   };
@@ -49,14 +51,7 @@ extern "C" {
   G_GNUC_INTERNAL JJobQueue* j_job_queue_new ();
   G_GNUC_INTERNAL JJobQueue* j_job_queue_ref (JJobQueue* queue);
   G_GNUC_INTERNAL void j_job_queue_unref (JJobQueue* queue);
-  G_GNUC_INTERNAL void j_job_queue_broadcast (JJobQueue* queue, JCode* code);
-  G_GNUC_INTERNAL void j_job_queue_broadcast_many (JJobQueue* queue, JCode* codes, guint n_codes);
-  G_GNUC_INTERNAL gboolean j_job_queue_execute (JJobQueue* queue);
-  G_GNUC_INTERNAL void j_job_queue_add_intructions (JJobQueue* queue, JCode** codes, guint n_codes);
-  G_GNUC_INTERNAL void j_job_queue_push_machine (JJobQueue* queue, JMachine* machine);
-  G_GNUC_INTERNAL void j_job_queue_pop_machine (JJobQueue* queue, JMachine* machine);
-  G_GNUC_INTERNAL void j_job_queue_bring_machine (JJobQueue* queue, JMachine* machine);
-  G_GNUC_INTERNAL JMachine* j_job_queue_get_machine (JJobQueue* queue, gint job);
+  G_GNUC_INTERNAL void j_job_queue_execute (JJobQueue* queue, JCode** codes, guint n_codes, GError** error);
 
 #if __cplusplus
 }

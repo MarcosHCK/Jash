@@ -33,14 +33,8 @@ extern "C" {
   enum _JCodeMark
   {
     J_CODE_MARK_FIRST_MARK = J_CODE_META_MAX_META,
-    J_CODE_MARK_PIPE,
-    J_CODE_MARK_EXPANSION_BEGIN,
-    J_CODE_MARK_EXPANSION_FINISH,
-    J_CODE_MARK_CHAIN_BEGIN,
-    J_CODE_MARK_CHAIN_FINISH,
   };
 
-  G_GNUC_INTERNAL gint j_parser_profile_inplace_expansions (GPtrArray* codes, GError** error);
   G_GNUC_INTERNAL gint j_parser_profile_null_branches (GPtrArray* codes, GError** error);
 
 #if __cplusplus
