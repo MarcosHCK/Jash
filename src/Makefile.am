@@ -28,17 +28,15 @@ bin_PROGRAMS=\
 	$(VOID)
 
 noinst_HEADERS=\
-	code.h \
+	ast.h \
 	datachannel.h \
 	fdchannel.h \
 	histcontrol.h \
-	jobqueue.h \
 	lexer.h \
-	machine.h \
 	parser.h \
-	profile.h \
 	readline.h \
 	token.h \
+	walker.h \
 	$(VOID)
 
 #
@@ -47,28 +45,26 @@ noinst_HEADERS=\
 #
 
 jash_SOURCES=\
-	code.c \
 	datachannel.c \
 	fdchannel.c \
 	histcontrol.c \
 	instance.c \
 	jash.c \
-	jobqueue.c \
 	lexer.c \
-	machine.c \
 	parser.c \
-	profile.c \
 	readline.c \
 	token.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \
 	-DG_LOG_USE_STRUCTURED=1 \
+	-flto \
 	$(GOBJECT_CFLAGS) \
 	$(GLIB_CFLAGS) \
 	$(READLINE_CFLAGS) \
 	$(VOID)
 jash_LDFLAGS=\
+	-flto \
 	$(GOBJECT_LIBS) \
 	$(GLIB_LIBS) \
 	$(READLINE_LIBS) \

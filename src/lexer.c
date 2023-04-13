@@ -98,6 +98,7 @@ JLexer* j_lexer_new_from_channel (GIOChannel* channel, GError** error)
                 return NULL;
               }
           }
+        default: g_assert_not_reached ();
       }
     }
 return (lexer);
@@ -214,7 +215,7 @@ static TokenClass* token_classes_peek (void)
 
   if (g_once_init_enter (&__classes__))
     {
-      const gint n_classes = 23;
+  #define n_classes (23)
       TokenClass* classes = g_new0 (TokenClass, n_classes + 1);
 
       typedef gchar linecount [__LINE__ + 1];
@@ -242,6 +243,7 @@ static TokenClass* token_classes_peek (void)
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, "[\n;]");
       classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_LITERAL, "[^\\s]+");
       G_STATIC_ASSERT (n_classes == __LINE__ - sizeof (linecount));
+    #undef n_classes
       g_once_init_leave (&__classes__, classes);
     }
 return (TokenClass*) __classes__;
@@ -425,7 +427,7 @@ static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line,
   {
     g_set_error
     (error, J_LEXER_ERROR, J_LEXER_ERROR_UNKNOWN_TOKEN,
-     "%d: %d: unknown token %s", line, column, prepare (lexer, input, length));
+     "%i: %i: unknown token %s", (int) line, (int) column, prepare (lexer, input, length));
     return -1;
   }
 return (added);

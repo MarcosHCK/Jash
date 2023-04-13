@@ -17,7 +17,6 @@
  */
 #include <config.h>
 #include <instance.h>
-#include <jobqueue.h>
 #include <lexer.h>
 #include <parser.h>
 #include <readline.h>
@@ -42,14 +41,13 @@ int j_instance_history (int argc, char* argv [])
   g_assert_not_reached ();
 }
 
-static void execute (JJobQueue* jobs, const gchar* data, gboolean data_is_file, GError** error)
+static void execute (const gchar* data, gboolean data_is_file, GError** error)
 {
   GError* tmperr = NULL;
   JLexer* lexer = NULL;
   JParser* parser = NULL;
   JToken* tokens = NULL;
   guint n_tokens = 0;
-  JCode** codes = NULL;
   guint n_codes = 0;
   guint good = 0;
 
@@ -76,15 +74,7 @@ static void execute (JJobQueue* jobs, const gchar* data, gboolean data_is_file, 
       return;
     }
 
-  codes = j_parser_get_codes (parser, &n_codes);
-  good = (j_job_queue_execute (jobs, codes, n_codes, &tmperr), 0);
   _j_parser_unref0 (parser);
-
-  if (G_UNLIKELY (tmperr != NULL))
-    {
-      g_propagate_error (error, tmperr);
-      return;
-    }
 }
 
 int j_instance_shell (int argc, char* argv[])
@@ -133,7 +123,6 @@ int j_instance_shell (int argc, char* argv[])
       return 1;
     }
 
-  JJobQueue* jobs = j_job_queue_new ();
   JReadline* readline = NULL;
   gboolean no_interactive = FALSE;
   gint result = 0;
@@ -143,7 +132,7 @@ int j_instance_shell (int argc, char* argv[])
     if (argc > 1)
       {
         for (i = 1; i < argc && !tmperr; i++)
-          execute (jobs, argv [i], TRUE, &tmperr);
+          execute (argv [i], TRUE, &tmperr);
           no_interactive = TRUE;
 #ifdef G_OS_WIN32
         g_strfreev (argv);
@@ -170,7 +159,7 @@ int j_instance_shell (int argc, char* argv[])
               }
           }
 
-        execute (jobs, line = j_readline_getline (readline), FALSE, &tmperr);
+        execute (line = j_readline_getline (readline), FALSE, &tmperr);
         g_free (line);
       }
 
@@ -202,7 +191,7 @@ int j_instance_shell (int argc, char* argv[])
           _g_error_free0 (tmperr);
         }
     }
-return (j_job_queue_unref (jobs), result);
+return (result);
 }
 
 int main (int argc, char* argv[])
