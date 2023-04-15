@@ -24,15 +24,13 @@
 #include <fcntl.h>
 
 typedef struct _TokenClass TokenClass;
-static const int CHUNK_MLT = 64;
-static const int BLOCK_SIZ = 512;
+#define BLOCK_SIZ (512)
+#define N_CLASSES (23)
 
 struct _JLexer
 {
   guint ref_count;
-
-  GArray* tokens;
-  GStringChunk* chunk;
+  TokenClass* classes;
 };
 
 struct _TokenClass
@@ -43,156 +41,10 @@ struct _TokenClass
 
 G_DEFINE_QUARK (j-lexer-error-quark, j_lexer_error);
 
-static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line, gsize column, GError** error);
-static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize line, gsize column, TokenClass* klass, GMatchInfo* info, GError** error);
+static gint search (JLexer* lexer, JTokens* tokens, const gchar* input, gsize length, gsize line, gsize column, GError** error);
+static gint breakdown (JLexer* lexer, JTokens* tokens, const gchar* input, gsize length, gsize line, gsize column, TokenClass* klass, GMatchInfo* info, GError** error);
 #define _g_match_info_free0(var) ((var == NULL) ? NULL : (var = (g_match_info_free (var), NULL)))
-#define _j_lexer_unref0(var) ((var == NULL) ? NULL : (var = (j_lexer_unref (var), NULL)))
-
-JLexer* j_lexer_new ()
-{
-  JLexer* self;
-
-  self = g_slice_new (JLexer);
-  self->ref_count = 1;
-  self->tokens = g_array_new (0, 0, sizeof (JToken));
-  self->chunk = g_string_chunk_new (CHUNK_MLT);
-return self;
-}
-
-JLexer* j_lexer_new_from_channel (GIOChannel* channel, GError** error)
-{
-  g_return_val_if_fail (channel != NULL, NULL);
-  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
-  GString* line = g_string_sized_new (BLOCK_SIZ);
-  JLexer* lexer = j_lexer_new ();
-  gsize terminator_pos, line_n = 1;
-  GError* tmperr = NULL;
-  GIOStatus status;
-
-  while ((status = g_io_channel_read_line_string (channel, line, &terminator_pos, &tmperr)) != G_IO_STATUS_EOF)
-    {
-      switch (status)
-      {
-        case G_IO_STATUS_AGAIN:
-          g_thread_yield ();
-          continue;
-        case G_IO_STATUS_ERROR:
-          g_propagate_error (error, tmperr);
-          g_string_free (line, TRUE);
-          j_lexer_unref (lexer);
-          return NULL;
-        case G_IO_STATUS_NORMAL:
-          {
-            g_string_truncate (line, terminator_pos);
-            g_string_append_c (line, '\n');
-            search (lexer, line->str, line->len, line_n, 1, &tmperr);
-            ++line_n;
-
-            if (G_UNLIKELY (tmperr == NULL))
-              break;
-            else
-              {
-                g_propagate_error (error, tmperr);
-                g_string_free (line, TRUE);
-                j_lexer_unref (lexer);
-                return NULL;
-              }
-          }
-        default: g_assert_not_reached ();
-      }
-    }
-return (lexer);
-}
-
-JLexer* j_lexer_new_from_data (const gchar* data, gssize length, GError** error)
-{
-  g_return_val_if_fail (data != NULL, NULL);
-  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
-  length = (length >= 0) ? length : strlen (data);
-
-  JLexer* lexer = NULL;
-  GBytes* bytes = g_bytes_new_static (data, length);
-  GIOChannel* channel = j_data_channel_new_bytes (bytes);
-  GError* tmperr = NULL;
-
-  lexer = j_lexer_new_from_channel (channel, &tmperr);
-          g_io_channel_shutdown (channel, 1, NULL);
-          g_io_channel_unref (channel);
-          g_bytes_unref (bytes);
-
-  if (G_UNLIKELY (tmperr != NULL))
-    {
-      g_propagate_error (error, tmperr);
-      _j_lexer_unref0 (lexer);
-    }
-return (lexer);
-}
-
-JLexer* j_lexer_new_from_file (const gchar* filename, GError** error)
-{
-  g_return_val_if_fail (filename != NULL, NULL);
-  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
-  gint fd, e;
-
-  if ((fd = open (filename, O_RDONLY)) < 0)
-    {
-      g_set_error
-      (error,
-       G_IO_CHANNEL_ERROR,
-       G_IO_CHANNEL_ERROR_FAILED,
-       "Can not open file %s",
-        filename);
-      return NULL;
-    }
-
-  JLexer* lexer = NULL;
-  GIOChannel* channel = j_fd_channel_new (fd);
-  //GIOChannel* channel = g_io_channel_unix_new (fd);
-  GError* tmperr = NULL;
-
-  lexer = j_lexer_new_from_channel (channel, &tmperr);
-          g_io_channel_shutdown (channel, 1, NULL);
-          g_io_channel_unref (channel);
-
-  if (G_UNLIKELY (tmperr != NULL))
-    {
-      g_propagate_error (error, tmperr);
-      _j_lexer_unref0 (lexer);
-    }
-return (lexer);
-}
-
-JLexer* j_lexer_ref (JLexer* lexer)
-{
-  g_return_val_if_fail (lexer != NULL, NULL);
-  JLexer* self = (lexer);
-
-  g_atomic_int_inc (&lexer->ref_count);
-    return self;
-}
-
-void j_lexer_unref (JLexer* lexer)
-{
-  g_return_if_fail (lexer != NULL);
-  JLexer* self = (lexer);
-
-  if (g_atomic_int_dec_and_test (&self->ref_count))
-    {
-      g_array_unref (self->tokens);
-      g_string_chunk_free (self->chunk);
-      g_slice_free (JLexer, self);
-    }
-}
-
-JToken* j_lexer_get_tokens (JLexer* lexer, guint* n_tokens)
-{
-  g_return_val_if_fail (lexer != NULL, NULL);
-  JLexer* self = (lexer);
-  guint nothing;
-
-  *((n_tokens) ? n_tokens : &nothing) = self->tokens->len;
-return (JToken*) self->tokens->data;
-}
+#define _j_tokens_unref0(var) ((var == NULL) ? NULL : (var = (j_tokens_unref (var), NULL)))
 
 static TokenClass token_klass (JTokenType type, const gchar* pattern)
 {
@@ -209,47 +61,157 @@ static TokenClass token_klass_null ()
 return klass;
 }
 
-static TokenClass* token_classes_peek (void)
+JLexer* j_lexer_new ()
 {
-  static TokenClass* __classes__ = NULL;
+  JLexer* self;
 
-  if (g_once_init_enter (&__classes__))
-    {
-  #define n_classes (23)
-      TokenClass* classes = g_new0 (TokenClass, n_classes + 1);
+  self = g_slice_new (JLexer);
+  self->ref_count = 1;
+  self->classes = g_new (TokenClass, N_CLASSES);
 
-      typedef gchar linecount [__LINE__ + 1];
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_COMMENT, "#(.*)");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_QUOTED, "\"(.*?)\"");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_QUOTED, "\'(.*?)\'");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_AGAIN);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_CD);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_ELSE);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_END);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_EXIT);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_FALSE);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_FG);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_GET);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_HELP);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_HISTORY);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_JOBS);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_SET);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_THEN);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_TRUE);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_UNSET);
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "(>>|&&|\\|\\|)");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "[<>|`&]");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, "[\n;]");
-      classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_LITERAL, "[^\\s]+");
-      G_STATIC_ASSERT (n_classes == __LINE__ - sizeof (linecount));
-    #undef n_classes
-      g_once_init_leave (&__classes__, classes);
-    }
-return (TokenClass*) __classes__;
+  typedef gchar linecount [__LINE__ + 1];
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_COMMENT, "#(.*)");
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_QUOTED, "\"(.*?)\"");
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_QUOTED, "\'(.*?)\'");
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_AGAIN);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_CD);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_ELSE);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_END);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_EXIT);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_FALSE);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_FG);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_GET);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_HELP);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_HISTORY);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_JOBS);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_SET);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_THEN);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_TRUE);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_UNSET);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "(>>|&&|\\|\\|)");
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "[<>|`&]");
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, "[\n;]");
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_LITERAL, "[^\\s]+");
+  G_STATIC_ASSERT (N_CLASSES == __LINE__ - sizeof (linecount));
+return (self);
 }
 
-static gint is_empty (JLexer* lexer, const gchar* input, gsize length)
+JLexer* j_lexer_ref (JLexer* lexer)
+{
+  g_return_val_if_fail (lexer != NULL, NULL);
+  JLexer* self = (lexer);
+
+  g_atomic_int_inc (&lexer->ref_count);
+    return self;
+}
+
+void j_lexer_unref (JLexer* lexer)
+{
+  g_return_if_fail (lexer != NULL);
+  JLexer* self = (lexer);
+  guint i;
+
+  if (g_atomic_int_dec_and_test (&self->ref_count))
+    {
+      for (i = 0; i < N_CLASSES; ++i)
+        g_regex_unref (self->classes [i].pattern);
+        g_free (self->classes);
+      g_slice_free (JLexer, self);
+    }
+}
+
+void j_lexer_scan_from_channel (JLexer* lexer, JTokens* tokens, GIOChannel* channel, GError** error)
+{
+  g_return_if_fail (lexer != NULL);
+  g_return_if_fail (tokens != NULL);
+  g_return_if_fail (channel != NULL);
+  g_return_if_fail (error == NULL || *error == NULL);
+  JLexer* self = (lexer);
+
+  GString* line = g_string_sized_new (BLOCK_SIZ);
+  gsize terminator_pos, n_line = 1;
+  GError* tmperr = NULL;
+  GIOStatus status;
+
+  while ((status = g_io_channel_read_line_string (channel, line, &terminator_pos, &tmperr)) != G_IO_STATUS_EOF)
+    {
+      switch (status)
+      {
+        case G_IO_STATUS_AGAIN:
+          g_thread_yield ();
+          continue;
+        case G_IO_STATUS_ERROR:
+          g_propagate_error (error, tmperr);
+          g_string_free (line, TRUE);
+          return;
+        case G_IO_STATUS_NORMAL:
+          {
+            g_string_truncate (line, terminator_pos);
+            g_string_append_c (line, '\n');
+            search (lexer, tokens, line->str, line->len, n_line, 1, &tmperr);
+            ++n_line;
+
+            if (G_UNLIKELY (tmperr == NULL))
+              break;
+            else
+              {
+                g_propagate_error (error, tmperr);
+                g_string_free (line, TRUE);
+                return;
+              }
+          }
+        default: g_assert_not_reached ();
+      }
+    }
+}
+
+void j_lexer_scan_from_data (JLexer* lexer, JTokens* tokens, const gchar* data, gssize length, GError** error)
+{
+  g_return_if_fail (lexer != NULL);
+  g_return_if_fail (tokens != NULL);
+  g_return_if_fail (data != NULL);
+  g_return_if_fail (error == NULL || *error == NULL);
+  JLexer* self = (lexer);
+
+  length = (length >= 0) ? length : strlen (data);
+
+  GBytes* bytes = g_bytes_new_static (data, length);
+  GIOChannel* channel = j_data_channel_new_bytes (bytes);
+
+  g_bytes_unref (bytes);
+
+  j_lexer_scan_from_channel (self, tokens, channel, error);
+  g_io_channel_shutdown (channel, 1, NULL);
+  g_io_channel_unref (channel);
+}
+
+void j_lexer_scan_from_file (JLexer* lexer, JTokens* tokens, const gchar* filename, GError** error)
+{
+  g_return_if_fail (lexer != NULL);
+  g_return_if_fail (tokens != NULL);
+  g_return_if_fail (filename != NULL);
+  g_return_if_fail (error == NULL || *error == NULL);
+  JLexer* self = (lexer);
+  gint fd, e;
+
+  if ((fd = open (filename, O_RDONLY)) < 0)
+    {
+      g_set_error
+      (error,
+       G_IO_CHANNEL_ERROR, G_IO_CHANNEL_ERROR_FAILED,
+       "Can not open file %s", filename);
+      return;
+    }
+
+  GIOChannel* channel = j_fd_channel_new (fd);
+
+  j_lexer_scan_from_channel (self, tokens, channel, error);
+  g_io_channel_shutdown (channel, 1, NULL);
+  g_io_channel_unref (channel);
+}
+
+static gint is_empty (const gchar* input, gsize length)
 {
   gchar* ptr = (gchar*) input;
   gsize left = (gsize) strnlen (input, length);
@@ -264,7 +226,7 @@ static gint is_empty (JLexer* lexer, const gchar* input, gsize length)
 return TRUE;
 }
 
-static const gchar* prepare (JLexer* lexer, const gchar* input, gsize length)
+static const gchar* prepare (const gchar* input, gsize length, gsize* full_length)
 {
   gchar* ptr = (gchar*) input;
   gsize left = (gsize) strnlen (input, length);
@@ -302,10 +264,10 @@ static const gchar* prepare (JLexer* lexer, const gchar* input, gsize length)
 
     ptr = g_utf8_next_char (ptr);
   }
-return g_string_chunk_insert_len (lexer->chunk, input, length - tailing);
+return (*full_length = length - tailing, input);
 }
 
-static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize line, gsize column, TokenClass* klass, GMatchInfo* info, GError** error)
+static gint breakdown (JLexer* self, JTokens* tokens, const gchar* input, gsize length, gsize line, gsize column, TokenClass* klass, GMatchInfo* info, GError** error)
 {
   GError* tmperr = NULL;
   gint start, stop, last = 0;
@@ -317,7 +279,7 @@ static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize li
 
       if (start > last)
       {
-        added += search (lexer, input + last, start - last, line, column + last, &tmperr);
+        added += search (self, tokens, input + last, start - last, line, column + last, &tmperr);
 
         if (G_UNLIKELY (tmperr != NULL))
           {
@@ -330,29 +292,36 @@ static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize li
       {
         const gint type = klass->type;
         const gchar* begin = input + start;
-        const gchar* value = NULL;
+        const gchar* value = begin;
+        gsize ssize;
 
         switch ((JTokenType) type)
           {
             case J_TOKEN_TYPE_COMMENT:
             case J_TOKEN_TYPE_LITERAL:
-              value = prepare (lexer, begin, stop - start);
+              value = prepare (value, stop - start, &ssize);
+              value = g_string_chunk_insert_len (tokens->chunk, value, ssize);
               break;
 
             case J_TOKEN_TYPE_QUOTED:
-              value = prepare (lexer, begin + 1, stop - start - 2);
+              value = prepare (value + 1, stop - start - 2, &ssize);
+              value = g_string_chunk_insert_len (tokens->chunk, value, ssize);
               break;
 
             default:
-              value = prepare (lexer, begin, stop - start);
-              value = g_intern_string (value);
-              break;
+              {
+                gchar* static_value = (gchar*) prepare (begin, stop - start, &ssize);
+                gchar* dynamic_value = (gchar*) g_strndup (static_value, ssize);
+                gchar* intern_value = (gchar*) g_intern_string (dynamic_value);
+                g_free ((value = intern_value, dynamic_value));
+                break;
+              }
           }
 
-        const gint coloff = column + start;
+        const guint coloff = column + start;
         const JToken token = { type, line, coloff, value, };
 
-        g_array_append_val (lexer->tokens, token);
+        g_array_append_val (&tokens->array->g_array, token);
         ++added;
       }
       G_STMT_END;
@@ -369,7 +338,7 @@ static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize li
 
   if (length > last)
     {
-      added += search (lexer, input + last, length - last, line, column + last, &tmperr);
+      added += search (self, tokens, input + last, length - last, line, column + last, &tmperr);
 
       if (G_UNLIKELY (tmperr != NULL))
         {
@@ -380,20 +349,17 @@ static gint breakdown (JLexer* lexer, const gchar* input, gsize length, gsize li
 return (added);
 }
 
-static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line, gsize column, GError** error)
+static gint search (JLexer* self, JTokens* tokens, const gchar* input, gsize length, gsize line, gsize column, GError** error)
 {
-  TokenClass* classes = NULL;
   TokenClass* klass = NULL;
   GMatchInfo* info = NULL;
   GError* tmperr = NULL;
   gint added = 0;
   gint got, i;
 
-  classes = token_classes_peek ();
-
-  for (i = 0; classes [i].pattern; ++i)
+  for (i = 0; i < N_CLASSES; ++i)
   {
-    klass = & classes [i];
+    klass = & self->classes [i];
     got = g_regex_match_full (klass->pattern, input, length, 0, 0, &info, &tmperr);
 
     if (G_UNLIKELY (tmperr != NULL))
@@ -410,7 +376,7 @@ static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line,
       }
     else
       {
-        added += breakdown (lexer, input, length, line, column, klass, info, &tmperr);
+        added += breakdown (self, tokens, input, length, line, column, klass, info, &tmperr);
                 g_match_info_free (info);
 
         if (G_UNLIKELY (tmperr == NULL))
@@ -423,11 +389,14 @@ static gint search (JLexer* lexer, const gchar* input, gsize length, gsize line,
       }
   }
 
-  if (added == 0 && !is_empty (lexer, input, length))
+  if (added == 0 && !is_empty (input, length))
   {
+    const gsize size = length;
+    const gchar* value = prepare (input, size, &length);
+
     g_set_error
     (error, J_LEXER_ERROR, J_LEXER_ERROR_UNKNOWN_TOKEN,
-     "%i: %i: unknown token %s", (int) line, (int) column, prepare (lexer, input, length));
+     "%i: %i: unknown token %.*s", (int) line, (int) column, (int) length, value);
     return -1;
   }
 return (added);

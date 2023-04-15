@@ -22,6 +22,8 @@
 typedef struct _JParser JParser;
 typedef enum _JParserError JParserError;
 
+typedef void JModule;
+
 #define J_PARSER_ERROR (j_parser_error_quark ())
 
 #if __cplusplus
@@ -37,9 +39,10 @@ extern "C" {
   };
 
   G_GNUC_INTERNAL GQuark j_parser_error_quark (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL JParser* j_parser_new_from_tokens (JToken* tokens, guint n_tokens, GError** error);
+  G_GNUC_INTERNAL JParser* j_parser_new ();
   G_GNUC_INTERNAL JParser* j_parser_ref (JParser* parser);
   G_GNUC_INTERNAL void j_parser_unref (JParser* parser);
+  G_GNUC_INTERNAL void j_parser_parse (JParser* parser, JModule* module, JTokens* tokens, GError** error);
 
 #if __cplusplus
 }

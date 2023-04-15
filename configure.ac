@@ -124,9 +124,30 @@ AC_PROG_RANLIB
 
 PKG_PROG_PKG_CONFIG
 
-
 AC_CHECK_PROG([GPERF], [gperf], [gperf], [no])
 AS_IF([test "x$GPERF" = "xno"], [AC_MSG_FAILURE([gperf not found our your system])])
+
+AC_CHECK_TOOL([LLVM_CONFIG], [llvm-config-14], [no])
+if test "x$LLVM_CONFIG" = "xno"; then
+  AC_CHECK_TOOL([LLVM_CONFIG], [llvm-config], [no])
+  if test "x$LLVM_CONFIG" = "xno"; then
+    AC_MSG_FAILURE([llvm-config not found our your system])
+  else
+    LLVM_CFLAGS=`$LLVM_CONFIG --cflags`
+    AC_SUBST([LLVM_CFLAGS], [])
+    LLVM_CXXFLAGS=`$LLVM_CONFIG --cxxflags`
+    AC_SUBST([LLVM_CXXFLAGS], [])
+    LLVM_LIBS=`$LLVM_CONFIG -- libs`
+    AC_SUBST([LLVM_LIBS], [])
+  fi
+else
+  LLVM_CFLAGS=`$LLVM_CONFIG --cflags`
+  AC_SUBST([LLVM_CFLAGS], [])
+  LLVM_CXXFLAGS=`$LLVM_CONFIG --cxxflags`
+  AC_SUBST([LLVM_CXXFLAGS], [])
+  LLVM_LIBS=`$LLVM_CONFIG --libs`
+  AC_SUBST([LLVM_LIBS], [])
+fi
 
 #
 # Check for libraries using pkg-config

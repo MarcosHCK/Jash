@@ -20,6 +20,7 @@
 #include <glib.h>
 
 typedef struct _JToken JToken;
+typedef struct _JTokens JTokens;
 typedef enum _JTokenType JTokenType;
 
 #define J_TOKEN_BUILTIN_AGAIN (j_token_builtin_again_intern_string ())
@@ -49,16 +50,37 @@ typedef enum _JTokenType JTokenType;
 #define J_TOKEN_SEPARATOR_CHAIN (j_token_separator_chain_intern_string ())
 #define J_TOKEN_SEPARATOR_NEWLINE (j_token_separator_newline_intern_string ())
 
+#define J_TOKEN_INIT { 0, 0, 0, NULL, }
+#define J_TOKEN_TYPE_BITS (4)
+#define J_TOKEN_LOCATION_BITS (((sizeof (guint64) * 8) - J_TOKEN_TYPE_BITS) / 2)
+
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
   struct _JToken
   {
-    guint64 type : 4;
-    guint64 line : (sizeof (guint64) * 8 - 4) / 2;
-    guint64 column : (sizeof (guint64) * 8 - 4) / 2;
+    guint64 type : J_TOKEN_TYPE_BITS;
+    guint64 line : J_TOKEN_LOCATION_BITS;
+    guint64 column : J_TOKEN_LOCATION_BITS;
     const gchar* value;
+  };
+
+  struct _JTokens
+  {
+    guint ref_count;
+    GStringChunk* chunk;
+
+    union
+    {
+      GArray g_array;
+
+      struct
+      {
+        JToken* elements;
+        guint count;
+      };
+    } *array;
   };
 
   enum _JTokenType
@@ -98,6 +120,10 @@ extern "C" {
   G_GNUC_INTERNAL const gchar* j_token_operator_redirection_write_intern_string (void) G_GNUC_CONST;
   G_GNUC_INTERNAL const gchar* j_token_separator_chain_intern_string (void) G_GNUC_CONST;
   G_GNUC_INTERNAL const gchar* j_token_separator_newline_intern_string (void) G_GNUC_CONST;
+
+  G_GNUC_INTERNAL JTokens* j_tokens_new ();
+  G_GNUC_INTERNAL JTokens* j_tokens_ref (JTokens* tokens);
+  G_GNUC_INTERNAL void j_tokens_unref (JTokens* tokens);
 
 #if __cplusplus
 }

@@ -18,6 +18,8 @@
 #include <config.h>
 #include <token.h>
 
+#define _g_free0(var) ((var == NULL) ? NULL : (var = (g_free (var), NULL)))
+
 #define _DEFINE_INTERN_FULL(type,name,value) \
   const gchar* j_token_ ## type ## _ ## name ## _intern_string (void) \
     { \
@@ -59,3 +61,54 @@ _DEFINE_INTERN_FULL (operator, redirection_read, <);
 _DEFINE_INTERN_FULL (operator, redirection_write, >);
 _DEFINE_INTERN_FULL (separator, chain, ;);
 _DEFINE_INTERN_FULL (separator, newline, \n);
+
+static const JToken __null = J_TOKEN_INIT;
+
+JTokens* j_tokens_new ()
+{
+  JTokens* self;
+
+  self = g_slice_new (JTokens);
+  self->chunk = (gpointer) g_string_chunk_new (64);
+  self->array = (gpointer) g_array_new (0, 0, sizeof (JToken));
+return (self);
+}
+
+JTokens* j_tokens_ref (JTokens* tokens)
+{
+  g_return_val_if_fail (tokens != NULL, NULL);
+  JTokens* self = (tokens);
+return (g_atomic_int_inc (&self->ref_count), self);
+}
+
+void j_tokens_unref (JTokens* tokens)
+{
+  g_return_if_fail (tokens != NULL);
+  JTokens* self = (tokens);
+
+  if (g_atomic_int_dec_and_test (&self->ref_count))
+    {
+      g_string_chunk_free (self->chunk);
+      g_array_unref (&self->array->g_array);
+      g_slice_free (JTokens, self);
+    }
+}
+
+void j_tokens_add (JTokens* tokens, JTokenType type, guint line, guint column, const gchar* value, gssize len)
+{
+  g_return_if_fail (tokens != NULL);
+  g_return_if_fail (J_TOKEN_LOCATION_BITS >= g_bit_storage (line));
+  g_return_if_fail (J_TOKEN_LOCATION_BITS >= g_bit_storage (column));
+  g_return_if_fail (value != NULL);
+  JTokens* self = (tokens);
+
+  JToken token =
+    {
+      .type = (JTokenType) type,
+      .line = (guint64) line,
+      .column = (guint64) column,
+      .value = g_string_chunk_insert_len (self->chunk, value, len),
+    };
+
+  g_array_append_val (&self->array->g_array, token);
+}

@@ -36,12 +36,11 @@ extern "C" {
 
   G_GNUC_INTERNAL GQuark j_lexer_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JLexer* j_lexer_new ();
-  G_GNUC_INTERNAL JLexer* j_lexer_new_from_channel (GIOChannel* channel, GError** error);
-  G_GNUC_INTERNAL JLexer* j_lexer_new_from_data (const gchar* data, gssize length, GError** error);
-  G_GNUC_INTERNAL JLexer* j_lexer_new_from_file (const gchar* filename, GError** error);
   G_GNUC_INTERNAL JLexer* j_lexer_ref (JLexer* lexer);
   G_GNUC_INTERNAL void j_lexer_unref (JLexer* lexer);
-  G_GNUC_INTERNAL JToken* j_lexer_get_tokens (JLexer* lexer, guint* n_tokens);
+  G_GNUC_INTERNAL void j_lexer_scan_from_channel (JLexer* lexer, JTokens* tokens, GIOChannel* channel, GError** error);
+  G_GNUC_INTERNAL void j_lexer_scan_from_data (JLexer* lexer, JTokens* tokens, const gchar* data, gssize length, GError** error);
+  G_GNUC_INTERNAL void j_lexer_scan_from_file (JLexer* lexer, JTokens* tokens, const gchar* filename, GError** error);
 
 #if __cplusplus
 }

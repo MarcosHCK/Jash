@@ -39,34 +39,13 @@ static Ast walk_scope (Walker* walker, GError** error);
 #define _g_ptr_array_unref0(var) ((var == NULL) ? NULL : (var = (g_ptr_array_unref (var), NULL)))
 #define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
 
-JParser* j_parser_new_from_tokens (JToken* tokens, guint n_tokens, GError** error)
+JParser* j_parser_new ()
 {
   JParser* self = NULL;
-  GError* tmperr = NULL;
-  Walker walker = WALKER_INIT;
-  Ast ast = NULL;
-  gint i;
-
-  for (i = 0; i < n_tokens; ++i)
-    {
-      if (tokens [i].type != J_TOKEN_TYPE_COMMENT)
-        walker_emplace (&walker, &tokens[i]);
-    }
-
-  walker_adjust (&walker, (({ g_assert_not_reached (); }), NULL));
-
-  if ((ast = walk_scope (&walker, &tmperr), walker_clear (&walker)), G_UNLIKELY ((tmperr != NULL)))
-    {
-      g_propagate_error (error, tmperr);
-      return NULL;
-    }
-
-  dumpast (ast);
-  ast_free (ast);
 
   self = g_slice_new (JParser);
   self->ref_count = 1;
-return self;
+return (self);
 }
 
 JParser* j_parser_ref (JParser* parser)
@@ -84,6 +63,37 @@ void j_parser_unref (JParser* parser)
   if (g_atomic_int_dec_and_test (&self->ref_count))
     {
       g_slice_free (JParser, self);
+    }
+}
+
+void j_parser_parse (JParser* parser, JModule* module, JTokens* tokens, GError** error)
+{
+  g_return_if_fail (parser != NULL);
+  g_return_if_fail (tokens != NULL);
+  g_return_if_fail (error == NULL || *error == NULL);
+  JParser* self = (parser);
+  GError* tmperr = NULL;
+
+  Walker walker = WALKER_INIT;
+  Ast ast = NULL;
+  guint i;
+
+  for (i = 0; i < tokens->array->count; ++i)
+    {
+      JToken* token = &tokens->array->elements [i];
+
+      if (token->type != J_TOKEN_TYPE_COMMENT)
+        walker_emplace (&walker, token);
+    }
+
+  walker_adjust (&walker, (({ g_assert_not_reached (); }), NULL));
+
+  if ((ast = walk_scope (&walker, &tmperr), walker_clear (&walker)), G_UNLIKELY ((tmperr != NULL)))
+    g_propagate_error (error, tmperr);
+  else
+    {
+      dumpast (ast);
+      ast_free (ast);
     }
 }
 

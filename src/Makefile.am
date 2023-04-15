@@ -48,7 +48,6 @@ jash_SOURCES=\
 	datachannel.c \
 	fdchannel.c \
 	histcontrol.c \
-	instance.c \
 	jash.c \
 	lexer.c \
 	parser.c \
@@ -61,12 +60,14 @@ jash_CFLAGS=\
 	-flto \
 	$(GOBJECT_CFLAGS) \
 	$(GLIB_CFLAGS) \
+	$(LLVM_CFLAGS) \
 	$(READLINE_CFLAGS) \
 	$(VOID)
 jash_LDFLAGS=\
 	-flto \
 	$(GOBJECT_LIBS) \
 	$(GLIB_LIBS) \
+	$(LLVM_LIBS) \
 	$(READLINE_LIBS) \
 	$(VOID)
 
