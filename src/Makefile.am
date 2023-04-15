@@ -60,14 +60,14 @@ jash_CFLAGS=\
 	-flto \
 	$(GOBJECT_CFLAGS) \
 	$(GLIB_CFLAGS) \
-	$(LLVM_CFLAGS) \
+	$(GOBJECT_CFLAGS) \
 	$(READLINE_CFLAGS) \
 	$(VOID)
 jash_LDFLAGS=\
 	-flto \
 	$(GOBJECT_LIBS) \
 	$(GLIB_LIBS) \
-	$(LLVM_LIBS) \
+	$(GOBJECT_LIBS) \
 	$(READLINE_LIBS) \
 	$(VOID)
 

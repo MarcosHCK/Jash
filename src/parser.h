@@ -17,12 +17,13 @@
  */
 #ifndef __JASH_PARSER__
 #define __JASH_PARSER__ 1
+#include <glib-object.h>
 #include <token.h>
 
+#define J_TYPE_PARSER (j_parser_get_type ())
+#define J_PARSER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), J_TYPE_PARSER, JParser))
+#define J_IS_PARSER(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), J_TYPE_PARSER))
 typedef struct _JParser JParser;
-typedef enum _JParserError JParserError;
-
-typedef void JModule;
 
 #define J_PARSER_ERROR (j_parser_error_quark ())
 
@@ -30,19 +31,18 @@ typedef void JModule;
 extern "C" {
 #endif // __cplusplus
 
-  enum _JParserError
+  typedef enum
   {
     J_PARSER_ERROR_FAILED,
     J_PARSER_ERROR_UNEXPECTED_EOF,
     J_PARSER_ERROR_EXPECTED_TOKEN,
     J_PARSER_ERROR_UNEXPECTED_TOKEN,
-  };
+  } JParserError;
 
   G_GNUC_INTERNAL GQuark j_parser_error_quark (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL GType j_parser_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JParser* j_parser_new ();
-  G_GNUC_INTERNAL JParser* j_parser_ref (JParser* parser);
-  G_GNUC_INTERNAL void j_parser_unref (JParser* parser);
-  G_GNUC_INTERNAL void j_parser_parse (JParser* parser, JModule* module, JTokens* tokens, GError** error);
+  G_GNUC_INTERNAL GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error);
 
 #if __cplusplus
 }

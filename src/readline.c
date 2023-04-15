@@ -21,10 +21,17 @@
 #include <readline/history.h>
 #include <readline.h>
 
+#define J_READLINE_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_READLINE, JReadlineClass))
+#define J_IS_READLINE_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_READLINE))
+#define J_READLINE_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_READLINE, JReadlineClass))
+typedef struct _JReadlineClass JReadlineClass;
+#define _g_free0(var) ((var == NULL) ? NULL : (var = (g_free (var), NULL)))
+
 struct _JReadline
 {
-  guint ref_count;
+  GObject parent;
 
+  /*<parent>*/
   guint history_file_size;
   guint history_flags;
   guint history_size;
@@ -33,7 +40,12 @@ struct _JReadline
   gchar* prompt;
 };
 
-#define _g_free0(var) ((var == NULL) ? NULL : (var = (g_free (var), NULL)))
+struct _JReadlineClass
+{
+  GObjectClass parent;
+};
+
+G_DEFINE_FINAL_TYPE (JReadline, j_readline, G_TYPE_OBJECT);
 
 static gint parsecontrol (const gchar* histcontrol)
 {
@@ -68,18 +80,14 @@ static gint parsecontrol (const gchar* histcontrol)
         }
     }
   }
-  while (ptr = g_utf8_next_char (ptr));
+  while ((ptr = g_utf8_next_char (ptr)));
+g_assert_not_reached ();
 }
 
-JReadline* j_readline_new ()
+static void j_readline_class_constructed (GObject* pself)
 {
-  JReadline* self = NULL;
-
-  rl_initialize ();
-  using_history ();
-
-  rl_bind_key ('\t', rl_complete);
-
+  JReadline* self = (gpointer) pself;
+G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
   const gchar* name = ".jash_history";
   const gchar* home = g_get_home_dir ();
   const gchar* history_file_size = NULL;
@@ -92,34 +100,40 @@ JReadline* j_readline_new ()
   rl_catch_signals = TRUE;
   rl_catch_sigwinch = TRUE;
 
-  self = g_slice_new0 (JReadline);
-  self->ref_count = 1;
   self->history_file_size = (history_file_size = g_getenv ("HISTFILESIZE")) ? (gint) g_strtod (history_file_size, NULL) : 2000;
   self->history_file = (history_file = g_getenv ("HISTFILE")) ? g_strdup (history_file) : g_build_filename (home, name, NULL);
   self->history_flags = (history_flags = g_getenv ("HISTCONTROL")) ? (gint) parsecontrol (history_flags) : deflags;
   self->history_size = (history_size = g_getenv ("HISTSIZE")) ? (gint) g_strtod (history_size, NULL) : 1000;
-return (stifle_history (self->history_size), self);
+
+  rl_initialize ();
+  using_history ();
+
+  stifle_history (self->history_size);
+  rl_bind_key ('\t', rl_complete);
 }
 
-JReadline* j_readline_ref (JReadline* readline)
+static void j_readline_class_finalize (GObject* pself)
 {
-  g_return_val_if_fail (readline != NULL, NULL);
-  JReadline* self = (readline);
-return (g_atomic_int_inc (&self->ref_count), self);
+  JReadline* self = (gpointer) pself; 
+  _g_free0 (self->history_file);
+  _g_free0 (self->lastpwd);
+  _g_free0 (self->prompt);
+G_OBJECT_CLASS (j_readline_parent_class)->finalize (pself);
 }
 
-void j_readline_unref (JReadline* readline)
+static void j_readline_class_init (JReadlineClass* klass)
 {
-  g_return_if_fail (readline != NULL);
-  JReadline* self = (readline);
+  G_OBJECT_CLASS (klass)->constructed = j_readline_class_constructed;
+  G_OBJECT_CLASS (klass)->finalize = j_readline_class_finalize;
+}
 
-  if (g_atomic_int_dec_and_test (&self->ref_count))
-    {
-      _g_free0 (self->history_file);
-      _g_free0 (self->lastpwd);
-      _g_free0 (self->prompt);
-      g_slice_free (JReadline, self);
-    }
+static void j_readline_init (JReadline* self)
+{
+}
+
+JReadline* j_readline_new ()
+{
+  return g_object_new (J_TYPE_READLINE, NULL);
 }
 
 static void saveline (JReadline* self, const gchar* line)
@@ -171,7 +185,7 @@ gchar* j_readline_getline (JReadline* readline_)
   || (((self->history_flags & J_HIST_CONTROL_IGNORE_FIRST_SPACE) != 0)
         && g_utf8_get_char (line1) == 0x20);
     g_clear_pointer (&line1, rl_free);
-return ((nosave) ? 0 : (add_history (line3), 1), line3);
+return (nosave) ? line3 : (add_history (line3), line3);
 }
 
 void j_readline_save (JReadline* readline, GError** error)
@@ -184,14 +198,14 @@ void j_readline_save (JReadline* readline, GError** error)
   if ((errn_ = write_history (self->history_file)) != 0)
     {
       erro_ = g_file_error_from_errno (errn_);
-      g_set_error (error, G_FILE_ERROR, erro_, g_strerror (errn_));
+      g_set_error_literal (error, G_FILE_ERROR, erro_, g_strerror (errn_));
       return;
     }
 
   if ((errn_ = history_truncate_file (self->history_file, self->history_file_size)) != 0)
     {
       erro_ = g_file_error_from_errno (errn_);
-      g_set_error (error, G_FILE_ERROR, erro_, g_strerror (errn_));
+      g_set_error_literal (error, G_FILE_ERROR, erro_, g_strerror (errn_));
       return;
     }
 }
@@ -208,6 +222,6 @@ void j_readline_load (JReadline* readline, GError** error)
       if ((erro_ = g_file_error_from_errno (errn_)) == G_FILE_ERROR_NOENT)
         j_readline_save (readline, error);
       else
-        g_set_error (error, G_FILE_ERROR, erro_, g_strerror (errn_));
+        g_set_error_literal (error, G_FILE_ERROR, erro_, g_strerror (errn_));
     }
 }

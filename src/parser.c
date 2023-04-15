@@ -20,13 +20,10 @@
 #include <parser.h>
 #include <walker.h>
 
-struct _JParser
-{
-  guint ref_count;
-};
-
-G_DEFINE_QUARK (j-parser-error-quark, j_parser_error);
-
+#define J_PARSER_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_PARSER, JParserClass))
+#define J_IS_PARSER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_PARSER))
+#define J_PARSER_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_PARSER, JParserClass))
+typedef struct _JParserClass JParserClass;
 static Ast walk_arguments (Walker* walker, GError** error);
 static Ast walk_command (Walker* walker, JToken* head, GError** error);
 static Ast walk_expansion (Walker* walker, JToken* head, GError** error);
@@ -39,38 +36,37 @@ static Ast walk_scope (Walker* walker, GError** error);
 #define _g_ptr_array_unref0(var) ((var == NULL) ? NULL : (var = (g_ptr_array_unref (var), NULL)))
 #define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
 
+struct _JParser
+{
+  GObject parent;
+};
+
+struct _JParserClass
+{
+  GObjectClass parent;
+};
+
+G_DEFINE_FINAL_TYPE (JParser, j_parser, G_TYPE_OBJECT);
+G_DEFINE_QUARK (j-parser-error-quark, j_parser_error);
+
+static void j_parser_class_init (JParserClass* klass) { }
+static void j_parser_init (JParser* self) { }
+
 JParser* j_parser_new ()
 {
-  JParser* self = NULL;
-
-  self = g_slice_new (JParser);
-  self->ref_count = 1;
-return (self);
+  return g_object_new (J_TYPE_PARSER, NULL);
 }
 
-JParser* j_parser_ref (JParser* parser)
+static void complain ()
+{
+  g_printerr ("closure called");
+}
+
+GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error)
 {
   g_return_val_if_fail (parser != NULL, NULL);
-  JParser* self = (parser);
-return (g_atomic_int_inc (&self->ref_count), self);
-}
-
-void j_parser_unref (JParser* parser)
-{
-  g_return_if_fail (parser != NULL);
-  JParser* self = (parser);
-
-  if (g_atomic_int_dec_and_test (&self->ref_count))
-    {
-      g_slice_free (JParser, self);
-    }
-}
-
-void j_parser_parse (JParser* parser, JModule* module, JTokens* tokens, GError** error)
-{
-  g_return_if_fail (parser != NULL);
-  g_return_if_fail (tokens != NULL);
-  g_return_if_fail (error == NULL || *error == NULL);
+  g_return_val_if_fail (tokens != NULL, NULL);
+  g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JParser* self = (parser);
   GError* tmperr = NULL;
 
@@ -94,7 +90,9 @@ void j_parser_parse (JParser* parser, JModule* module, JTokens* tokens, GError**
     {
       dumpast (ast);
       ast_free (ast);
+      return g_cclosure_new (G_CALLBACK (complain), NULL, NULL);
     }
+return NULL;
 }
 
 #if DEVELOPER

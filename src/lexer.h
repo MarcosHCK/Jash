@@ -17,10 +17,13 @@
  */
 #ifndef __JASH_LEXER__
 #define __JASH_LEXER__ 1
+#include <glib-object.h>
 #include <token.h>
 
+#define J_TYPE_LEXER (j_lexer_get_type ())
+#define J_LEXER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), J_TYPE_LEXER, JLexer))
+#define J_IS_LEXER(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), J_TYPE_LEXER))
 typedef struct _JLexer JLexer;
-typedef enum _JLexerError JLexerError;
 
 #define J_LEXER_ERROR (j_lexer_error_quark ())
 
@@ -28,19 +31,18 @@ typedef enum _JLexerError JLexerError;
 extern "C" {
 #endif // __cplusplus
 
-  enum _JLexerError
+  typedef enum
   {
     J_LEXER_ERROR_FAILED,
     J_LEXER_ERROR_UNKNOWN_TOKEN,
-  };
+  } JLexerError;
 
   G_GNUC_INTERNAL GQuark j_lexer_error_quark (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL GType j_lexer_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JLexer* j_lexer_new ();
-  G_GNUC_INTERNAL JLexer* j_lexer_ref (JLexer* lexer);
-  G_GNUC_INTERNAL void j_lexer_unref (JLexer* lexer);
-  G_GNUC_INTERNAL void j_lexer_scan_from_channel (JLexer* lexer, JTokens* tokens, GIOChannel* channel, GError** error);
-  G_GNUC_INTERNAL void j_lexer_scan_from_data (JLexer* lexer, JTokens* tokens, const gchar* data, gssize length, GError** error);
-  G_GNUC_INTERNAL void j_lexer_scan_from_file (JLexer* lexer, JTokens* tokens, const gchar* filename, GError** error);
+  G_GNUC_INTERNAL JTokens* j_lexer_scan_from_channel (JLexer* lexer, GIOChannel* channel, GError** error);
+  G_GNUC_INTERNAL JTokens* j_lexer_scan_from_data (JLexer* lexer, const gchar* data, gssize length, GError** error);
+  G_GNUC_INTERNAL JTokens* j_lexer_scan_from_file (JLexer* lexer, const gchar* filename, GError** error);
 
 #if __cplusplus
 }

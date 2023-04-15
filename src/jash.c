@@ -28,9 +28,7 @@ struct _Jash
 
 typedef struct _Jash Jash;
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
-#define _j_lexer_unref0(var) ((var == NULL) ? NULL : (var = (j_lexer_unref (var), NULL)))
-#define _j_module_unref0(var) ((var == NULL) ? NULL : (var = (j_module_unref (var), NULL)))
-#define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
+#define _g_object_unref0(var) ((var == NULL) ? NULL : (var = (g_object_unref (var), NULL)))
 #define _j_readline_unref0(var) ((var == NULL) ? NULL : (var = (j_readline_unref (var), NULL)))
 
 static void jash_init (Jash* self)
@@ -41,63 +39,63 @@ static void jash_init (Jash* self)
 
 static void jash_clear (Jash* self)
 {
-  j_lexer_unref (self->lexer);
-  j_parser_unref (self->parser);
+  _g_object_unref0 (self->parser);
+  _g_object_unref0 (self->lexer);
 }
 
-static JModule* jash_load_data (Jash* self, const gchar* data, GError** error)
+static GClosure* jash_load_data (Jash* self, const gchar* data, GError** error)
 {
-  JTokens* tokens = j_tokens_new ();
-  JModule* module = NULL;
+  JTokens* tokens = NULL;
+  GClosure* closure = NULL;
   GError* tmperr = NULL;
 
-  if (j_lexer_scan_from_data (self->lexer, tokens, data, strlen (data), &tmperr), G_UNLIKELY (tmperr != NULL))
+  if ((tokens = j_lexer_scan_from_data (self->lexer, data, strlen (data), &tmperr)), G_UNLIKELY (tmperr != NULL))
     {
       g_propagate_error (error, tmperr);
       j_tokens_unref (tokens);
     }
-return (j_parser_parse (self->parser, module, tokens, error), j_tokens_unref (tokens), module);
+return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
 }
 
-static JModule* jash_load_file (Jash* self, const gchar* filename, GError** error)
+static GClosure* jash_load_file (Jash* self, const gchar* filename, GError** error)
 {
-  JTokens* tokens = j_tokens_new ();
-  JModule* module = NULL;
+  JTokens* tokens = NULL;
+  GClosure* closure = NULL;
   GError* tmperr = NULL;
 
-  if (j_lexer_scan_from_file (self->lexer, tokens, filename, &tmperr), G_UNLIKELY (tmperr != NULL))
+  if ((tokens = j_lexer_scan_from_file (self->lexer, filename, &tmperr)), G_UNLIKELY (tmperr != NULL))
     {
       g_propagate_error (error, tmperr);
       j_tokens_unref (tokens);
     }
-return (j_parser_parse (self->parser, module, tokens, error), j_tokens_unref (tokens), module);
+return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
 }
 
 static void jash_script (Jash* self, const gchar* filename, GError** error)
 {
+  GClosure* closure = NULL;
   GError* tmperr = NULL;
-  JModule* module = NULL;
 
-  module = jash_load_file (self, filename, &tmperr);
+  closure = jash_load_file (self, filename, &tmperr);
 
   if (G_UNLIKELY (tmperr != NULL))
     g_propagate_error (error, tmperr);
   else
     {
-      (void) module;
+      g_closure_unref (closure);
     }
 }
 
 static void jash_interactive (Jash* self, JReadline* readline, GError** error)
 {
+  GClosure* closure = NULL;
   GError* tmperr = NULL;
-  JModule* module = NULL;
   gchar* line;
 
   while (TRUE)
     {
       line = j_readline_getline (readline);
-      module = jash_load_data (self, line, &tmperr);
+      closure = jash_load_data (self, line, &tmperr);
 
       if (G_UNLIKELY (tmperr != NULL))
         {
@@ -110,7 +108,7 @@ static void jash_interactive (Jash* self, JReadline* readline, GError** error)
         }
       else
         {
-          (void) module;
+          g_closure_unref (closure);
         }
     }
 }
@@ -174,7 +172,7 @@ int main (int argc, char* argv [])
         jash_interactive (&self, readline, &tmperr);
 
         j_readline_save (readline, NULL);
-        j_readline_unref (readline);
+        _g_object_unref0 (readline);
     }
   else
     {

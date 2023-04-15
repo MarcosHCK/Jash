@@ -20,7 +20,6 @@
 #include <glib.h>
 
 typedef struct _GNode *Ast;
-typedef enum _AstType AstType;
 
 #define ast_node(type) (({ guint __type = ((type)); (Ast) g_node_new (GINT_TO_POINTER (__type)); }))
 #define ast_free(node) ((_g_node_destroy0 (node)))
@@ -36,7 +35,7 @@ typedef enum _AstType AstType;
 extern "C" {
 #endif // __cplusplus
 
-  enum _AstType
+  typedef enum
   {
     AST_ARGUMENTS,
     AST_BUILTIN,
@@ -56,7 +55,7 @@ extern "C" {
     AST_REDIRECT_OUTPUT_REPLACE,
     AST_SCOPE,
     AST_TARGET,
-  };
+  } AstType;
 
   static inline Ast ast_data (gconstpointer data)
   {

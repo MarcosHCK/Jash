@@ -17,17 +17,19 @@
  */
 #ifndef __JASH_READLINE__
 #define __JASH_READLINE__ 1
-#include <glib.h>
+#include <glib-object.h>
 
+#define J_TYPE_READLINE (j_readline_get_type ())
+#define J_READLINE(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), J_TYPE_READLINE, JReadline))
+#define J_IS_READLINE(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), J_TYPE_READLINE))
 typedef struct _JReadline JReadline;
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
+  G_GNUC_INTERNAL GType j_readline_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JReadline* j_readline_new ();
-  G_GNUC_INTERNAL JReadline* j_readline_ref (JReadline* readline);
-  G_GNUC_INTERNAL void j_readline_unref (JReadline* readline);
   G_GNUC_INTERNAL gchar* j_readline_getline (JReadline* readline);
   G_GNUC_INTERNAL void j_readline_save (JReadline* readline, GError** error);
   G_GNUC_INTERNAL void j_readline_load (JReadline* readline, GError** error);
