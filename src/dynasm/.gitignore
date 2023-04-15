@@ -16,22 +16,6 @@
 # along with JASH. If not, see <http://www.gnu.org/licenses/>.
 #
 
-*.[ao]
-*.la
-*.lai
-*.lo
-*.old
-*.Po
-*.Plo
-*.Tpo
-
-jash
-jash.exe
-
-histcontrol.c
-instance.c
-
-codegen_*.c
-!codegen_*.dasc.c
-!codegen_closure.c
-!codegen_common.[ch]
+/**
+!.gitignore
+!README.md

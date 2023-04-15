@@ -23,12 +23,13 @@ VOID=
 # - declare
 #
 
-bin_PROGRAMS=\
-	jash
-	$(VOID)
+bin_PROGRAMS=jash
+noinst_LTLIBRARIES=libcodegen.la
 
 noinst_HEADERS=\
 	ast.h \
+	codegen.h \
+	codegen_common.h \
 	datachannel.h \
 	fdchannel.h \
 	histcontrol.h \
@@ -37,6 +38,10 @@ noinst_HEADERS=\
 	readline.h \
 	token.h \
 	walker.h \
+	$(VOID)
+
+noinst_DATA=\
+	codegen_x86_64.c \
 	$(VOID)
 
 #
@@ -58,17 +63,37 @@ jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \
 	-DG_LOG_USE_STRUCTURED=1 \
 	-flto \
-	$(GOBJECT_CFLAGS) \
 	$(GLIB_CFLAGS) \
 	$(GOBJECT_CFLAGS) \
 	$(READLINE_CFLAGS) \
 	$(VOID)
 jash_LDFLAGS=\
 	-flto \
-	$(GOBJECT_LIBS) \
+	$(VOID)
+jash_LDADD=\
 	$(GLIB_LIBS) \
 	$(GOBJECT_LIBS) \
 	$(READLINE_LIBS) \
+	libcodegen.la \
+	$(VOID)
+
+libcodegen_la_SOURCES=\
+	codegen_closure.c \
+	codegen_common.c \
+	codegen_${host_cpu}.c \
+	$(VOID)
+libcodegen_la_CFLAGS=\
+	-DG_LOG_DOMAIN=\"Jash.Codegen\" \
+	-DG_LOG_USE_STRUCTURED=1 \
+	-D__CODEGEN__ \
+	-flto \
+	$(GLIB_CFLAGS) \
+	$(VOID)
+libcodegen_la_LDFLAGS=\
+	-flto \
+	$(VOID)
+libcodegen_la_LIBADD=\
+	$(GLIB_LIBS) \
 	$(VOID)
 
 #
@@ -76,7 +101,10 @@ jash_LDFLAGS=\
 # - .stringlist -> .c
 #
 
-SUFFIXES=.stringlist
+SUFFIXES=.stringlist .dasc.c .c
+DYNASM_CFLAGS=-D DEBUG=\"${DEBUG}\" -D DEVELOPER=\"${DEVELOPER}\"
 
+.dasc.c.c:
+	$(DYNASM) $(DYNASM_CFLAGS) -o $@ $<
 .stringlist.c:
 	$(GPERF) --output-file $@ -PCI $<

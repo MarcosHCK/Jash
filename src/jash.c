@@ -57,6 +57,21 @@ static GClosure* jash_load_data (Jash* self, const gchar* data, GError** error)
 return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
 }
 
+static gboolean jash_run (Jash* self, GClosure* closure, GError** error)
+{
+  GValue values [2] = {0};
+  gboolean result;
+
+  g_value_init (values + 0, G_TYPE_BOOLEAN);
+  g_value_init (values + 1, G_TYPE_POINTER);
+  g_value_set_boolean (values + 0, FALSE);
+  g_value_set_pointer (values + 1, self);
+
+  g_closure_invoke (closure, values + 0, 1, values + 1, NULL);
+  g_value_unset (values + 1);
+return (result = g_value_get_boolean (values + 0), g_value_unset (values), result);
+}
+
 static GClosure* jash_load_file (Jash* self, const gchar* filename, GError** error)
 {
   JTokens* tokens = NULL;
@@ -82,6 +97,7 @@ static void jash_script (Jash* self, const gchar* filename, GError** error)
     g_propagate_error (error, tmperr);
   else
     {
+      jash_run (self, closure, error);
       g_closure_unref (closure);
     }
 }
@@ -108,6 +124,7 @@ static void jash_interactive (Jash* self, JReadline* readline, GError** error)
         }
       else
         {
+          jash_run (self, closure, error);
           g_closure_unref (closure);
         }
     }

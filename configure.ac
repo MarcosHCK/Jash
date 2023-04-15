@@ -127,6 +127,18 @@ PKG_PROG_PKG_CONFIG
 AC_CHECK_PROG([GPERF], [gperf], [gperf], [no])
 AS_IF([test "x$GPERF" = "xno"], [AC_MSG_FAILURE([gperf not found our your system])])
 
+AC_ARG_VAR([LUA], [Lua interpreter])
+AS_IF([test "x$LUA" = "x"], [
+AC_PATH_PROGS([LUA], [luajit], [no])
+AS_IF([test "x$LUA" = "xno"], [
+AC_PATH_PROGS([LUA], [lua-interpreter], [no], [/etc/alternatives/])
+AS_IF([test "x$LUA" = "xno"], [
+AC_PATH_PROGS([LUA], [lua lua-any lua5.4 lua5.3 lua5.2 lua5.1], [no])
+AS_IF([test "x$LUA" = "xno"], [
+AC_MSG_FAILURE([no lua interpreter found])
+])])])])
+AC_SUBST([DYNASM], [\${LUA}\ \${top_builddir}/src/dynasm/dynasm.lua])
+
 #
 # Check for libraries using pkg-config
 # Note: keep sorted alphabetically 

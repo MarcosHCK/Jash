@@ -17,6 +17,7 @@
  */
 #include <config.h>
 #include <ast.h>
+#include <codegen.h>
 #include <parser.h>
 #include <walker.h>
 
@@ -24,6 +25,7 @@
 #define J_IS_PARSER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_PARSER))
 #define J_PARSER_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_PARSER, JParserClass))
 typedef struct _JParserClass JParserClass;
+static GClosure* emit_closure (JCodegen* codegen, Ast ast, GError** error);
 static Ast walk_arguments (Walker* walker, GError** error);
 static Ast walk_command (Walker* walker, JToken* head, GError** error);
 static Ast walk_expansion (Walker* walker, JToken* head, GError** error);
@@ -71,6 +73,7 @@ GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error)
   GError* tmperr = NULL;
 
   Walker walker = WALKER_INIT;
+  GClosure* closure = NULL;
   Ast ast = NULL;
   guint i;
 
@@ -88,9 +91,12 @@ GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error)
     g_propagate_error (error, tmperr);
   else
     {
-      dumpast (ast);
-      ast_free (ast);
-      return g_cclosure_new (G_CALLBACK (complain), NULL, NULL);
+      JCodegen codegen;
+
+      if ((closure = emit_closure (&codegen, ast, &tmperr), ast_free (ast)) != NULL)
+        g_propagate_error (error, tmperr);
+      else
+        return closure;
     }
 return NULL;
 }
@@ -108,6 +114,17 @@ return NULL;
 
 #define THROW_EOS() THROW (J_PARSER_ERROR_UNEXPECTED_EOF, "%i: %i: Unexpected end of scope", locate (walker_last (walker)))
 #define THROW_UNEXPECTED(token) ({ JToken* __token = ((token)); THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%i: %i: Unexpected token '%s'", locate (__token), __token->value); })
+
+static GClosure* emit_closure (JCodegen* codegen, Ast ast, GError** error)
+{
+  GClosure* closure = NULL;
+
+  j_codegen_init (codegen);
+  j_codegen_prologue (codegen);
+  j_codegen_generate (codegen, ast);
+  j_codegen_epilogue (codegen);
+return (closure = j_codegen_emit (codegen), j_codegen_clear (codegen), closure);
+}
 
 static void collect (Walker* src, Walker* dst, GError** error, gint type, ...)
 {
