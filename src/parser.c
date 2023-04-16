@@ -59,11 +59,6 @@ JParser* j_parser_new ()
   return g_object_new (J_TYPE_PARSER, NULL);
 }
 
-static void complain ()
-{
-  g_printerr ("closure called");
-}
-
 GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error)
 {
   g_return_val_if_fail (parser != NULL, NULL);
@@ -116,7 +111,7 @@ return NULL;
 #define THROW_UNEXPECTED(token) ({ JToken* __token = ((token)); THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%i: %i: Unexpected token '%s'", locate (__token), __token->value); })
 
 static GClosure* emit_closure (JCodegen* codegen, Ast ast, GError** error)
-{
+{ dumpast (ast);
   GClosure* closure = NULL;
 
   j_codegen_init (codegen);

@@ -52,7 +52,7 @@ GClosure* j_codegen_emit (JCodegen* codegen)
   jc = (JClosure*) gc;
 
   g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_notify);
-  g_closure_set_marshal (gc, g_cclosure_marshal_VOID__VOID);
+  g_closure_set_marshal (gc, g_cclosure_marshal_VOID__POINTER);
 
   g_closure_ref (gc);
   g_closure_sink (gc);

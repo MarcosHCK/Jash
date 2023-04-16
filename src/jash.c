@@ -16,34 +16,64 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
+#include <jash.h>
 #include <lexer.h>
 #include <parser.h>
 #include <readline.h>
 
-struct _Jash
-{
-  JLexer* lexer;
-  JParser* parser;
-};
-
-typedef struct _Jash Jash;
+#define J_ASH_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_ASH, JAshClass))
+#define J_IS_ASH_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_ASH))
+#define J_ASH_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_ASH, JAshClass))
+typedef struct _JAshClass JAshClass;
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
 #define _g_object_unref0(var) ((var == NULL) ? NULL : (var = (g_object_unref (var), NULL)))
 #define _j_readline_unref0(var) ((var == NULL) ? NULL : (var = (j_readline_unref (var), NULL)))
 
-static void jash_init (Jash* self)
+struct _JAsh
+{
+  GObject parent;
+
+  /*<private>*/
+  JLexer* lexer;
+  JParser* parser;
+  JReadline* readline; /* lazy */
+};
+
+struct _JAshClass
+{
+  GObjectClass parent;
+};
+
+G_DEFINE_FINAL_TYPE (JAsh, j_ash, G_TYPE_OBJECT);
+
+static void j_ash_class_finalize (GObject* pself)
+{
+  JAsh* self = (gpointer) pself;
+G_OBJECT_CLASS (j_ash_parent_class)->finalize (pself);
+}
+
+static void j_ash_class_dispose (GObject* pself)
+{
+  JAsh* self = (gpointer) pself;
+  _g_object_unref0 (self->lexer);
+  _g_object_unref0 (self->parser);
+  _g_object_unref0 (self->readline);
+G_OBJECT_CLASS (j_ash_parent_class)->dispose (pself);
+}
+
+static void j_ash_class_init (JAshClass* klass)
+{
+  G_OBJECT_CLASS (klass)->finalize = j_ash_class_finalize;
+  G_OBJECT_CLASS (klass)->dispose = j_ash_class_dispose;
+}
+
+static void j_ash_init (JAsh* self)
 {
   self->lexer = j_lexer_new ();
   self->parser = j_parser_new ();
 }
 
-static void jash_clear (Jash* self)
-{
-  _g_object_unref0 (self->parser);
-  _g_object_unref0 (self->lexer);
-}
-
-static GClosure* jash_load_data (Jash* self, const gchar* data, GError** error)
+GClosure* j_ash_load_data (JAsh* self, const gchar* data, GError** error)
 {
   JTokens* tokens = NULL;
   GClosure* closure = NULL;
@@ -57,22 +87,7 @@ static GClosure* jash_load_data (Jash* self, const gchar* data, GError** error)
 return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
 }
 
-static gboolean jash_run (Jash* self, GClosure* closure, GError** error)
-{
-  GValue values [2] = {0};
-  gboolean result;
-
-  g_value_init (values + 0, G_TYPE_BOOLEAN);
-  g_value_init (values + 1, G_TYPE_POINTER);
-  g_value_set_boolean (values + 0, FALSE);
-  g_value_set_pointer (values + 1, self);
-
-  g_closure_invoke (closure, values + 0, 1, values + 1, NULL);
-  g_value_unset (values + 1);
-return (result = g_value_get_boolean (values + 0), g_value_unset (values), result);
-}
-
-static GClosure* jash_load_file (Jash* self, const gchar* filename, GError** error)
+GClosure* j_ash_load_file (JAsh* self, const gchar* filename, GError** error)
 {
   JTokens* tokens = NULL;
   GClosure* closure = NULL;
@@ -86,47 +101,74 @@ static GClosure* jash_load_file (Jash* self, const gchar* filename, GError** err
 return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
 }
 
-static void jash_script (Jash* self, const gchar* filename, GError** error)
+gboolean j_ash_run (JAsh* self, GClosure* closure, GError** error)
 {
-  GClosure* closure = NULL;
-  GError* tmperr = NULL;
+  GValue values [2] = { G_VALUE_INIT };
+  GValue result [1] = { G_VALUE_INIT };
+  gboolean return_;
 
-  closure = jash_load_file (self, filename, &tmperr);
+  g_value_init (values + 0, J_TYPE_ASH);
+  g_value_init (values + 1, G_TYPE_POINTER);
+  g_value_init (result, G_TYPE_BOOLEAN);
 
-  if (G_UNLIKELY (tmperr != NULL))
-    g_propagate_error (error, tmperr);
-  else
-    {
-      jash_run (self, closure, error);
-      g_closure_unref (closure);
-    }
+  g_value_set_object (values + 0, self);
+  g_value_set_pointer (values + 1, error);
+
+  g_closure_invoke (closure, result, 2, values, NULL);
+  g_value_unset (values + 1);
+  g_value_unset (values + 0);
+return (return_ = g_value_get_boolean (result), g_value_unset (result), return_);
 }
 
-static void jash_interactive (Jash* self, JReadline* readline, GError** error)
+void j_ash_run_interactive (JAsh* self, GError** error)
 {
   GClosure* closure = NULL;
   GError* tmperr = NULL;
   gchar* line;
 
-  while (TRUE)
+  if (j_readline_load (self->readline = j_readline_new (), &tmperr), G_UNLIKELY (tmperr != NULL))
+    g_propagate_error (error, tmperr);
+  else
     {
-      line = j_readline_getline (readline);
-      closure = jash_load_data (self, line, &tmperr);
+      while (TRUE)
+      {
+        line = j_readline_getline (self->readline);
+        closure = j_ash_load_data (self, line, &tmperr);
 
-      if (G_UNLIKELY (tmperr != NULL))
-        {
-          const gint code = tmperr->code;
-          const gchar* domain = g_quark_to_string (tmperr->domain);
-          const gchar* message = tmperr->message;
+        if (G_UNLIKELY (tmperr != NULL))
+          {
+            const gint code = tmperr->code;
+            const gchar* domain = g_quark_to_string (tmperr->domain);
+            const gchar* message = tmperr->message;
 
-          g_printerr ("%s: %i: %s", domain, code, message);
-          _g_error_free0 (tmperr);
-        }
-      else
-        {
-          jash_run (self, closure, error);
-          g_closure_unref (closure);
-        }
+            g_printerr ("%s: %i: %s", domain, code, message);
+            _g_error_free0 (tmperr);
+          }
+        else
+          {
+            j_ash_run (self, closure, error);
+            g_closure_unref (closure);
+          }
+      }
+
+      if (j_readline_save (self->readline, &tmperr), G_UNLIKELY (tmperr != NULL))
+        g_propagate_error (error, tmperr);
+    }
+}
+
+void j_ash_run_script (JAsh* self, const gchar* filename, GError** error)
+{
+  GClosure* closure = NULL;
+  GError* tmperr = NULL;
+
+  closure = j_ash_load_file (self, filename, &tmperr);
+
+  if (G_UNLIKELY (tmperr != NULL))
+    g_propagate_error (error, tmperr);
+  else
+    {
+      j_ash_run (self, closure, error);
+      g_closure_unref (closure);
     }
 }
 
@@ -137,9 +179,9 @@ int main (int argc, char* argv [])
   const gchar* parameter_string = "[<script file>] ...";
   const gchar* summary_string = "";
 
-  GOptionContext* context;
+  GOptionContext* context = NULL;
+  JAsh* jash = NULL;
   GError* tmperr = NULL;
-  Jash self = {0};
 
   const GOptionEntry entries [] =
     {
@@ -179,25 +221,17 @@ int main (int argc, char* argv [])
       return 1;
     }
 
-  jash_init (&self);
+  jash = g_object_new (J_TYPE_ASH, NULL);
 
   if (argc == 1)
-    {
-      JReadline* readline = NULL;
-
-      if (j_readline_load (readline = j_readline_new (), &tmperr), G_LIKELY (tmperr == NULL))
-        jash_interactive (&self, readline, &tmperr);
-
-        j_readline_save (readline, NULL);
-        _g_object_unref0 (readline);
-    }
+    j_ash_run_interactive (jash, &tmperr);
   else
     {
       gint i;
 
       for (i = 1; i < argc; ++i)
       {
-        if (jash_script (&self, argv [i], &tmperr), G_UNLIKELY (tmperr != NULL))
+        if (j_ash_run_script (jash, argv [i], &tmperr), G_UNLIKELY (tmperr != NULL))
           break;
       }
     }
@@ -211,8 +245,8 @@ int main (int argc, char* argv [])
       g_critical ("(" G_STRLOC "): %s: %i: %s", domain, code, message);
       g_error_free (tmperr);
 #ifdef G_OS_WIN32
-            g_strfreev (argv);
+      g_strfreev (argv);
 #endif // G_OS_WIN32
     }
-return (jash_clear (&self), ((tmperr) ? 1 : 0));
+return (g_object_unref (jash), ((tmperr) ? 1 : 0));
 }

@@ -31,20 +31,24 @@
 # define globl_main (J_CODEGEN_LABEL_MAIN)
 # define globl__MAX (0)
 static const unsigned char actions[];
-static const char *const globl_names[];
-static const char *const extern_names[];
+static const char* const globl_names[];
+static const char* const extern_names[];
 #endif // __CODEGEN__
 
 #define stacksz_r \
   ( \
     0 \
     + sizeof (gpointer) /* jash */ \
+    + sizeof (gpointer) /* error */ \
   )
 
 G_STATIC_ASSERT (J_CODEGEN_LABEL_MAIN == globl_main);
 
 #if __CODEGEN__
 |.define Jash, [rsp + (sizeof (gpointer) * 0)]
+|.define Error, [rsp + (sizeof (gpointer) * 1)]
+|.define RetContinue, 1
+|.define RetRemove, 0
 #endif // __CODEGEN__
 
 static void dumpbuffer (Dst_DECL, gconstpointer data, gsize buffsz)
@@ -92,8 +96,10 @@ void j_codegen_prologue (JCodegen* codegen)
   | sub rsp, (stacksz_r)
 # ifdef G_OS_UNIX
   | mov Jash, rdi
+  | mov Error, rsi
 # else // !G_OS_UNIX
   | mov Jash, rcx
+  | mov Error, rdx
 # endif // G_OS_UNIX
 #endif // __CODEGEN__
 }
@@ -103,6 +109,7 @@ void j_codegen_epilogue (JCodegen* codegen)
   Dst_DECL = (dasm_State**) &codegen->context;
 #if __CODEGEN__
   | add rsp, (stacksz_r)
+  | mov rax, RetContinue
   | ret
 #endif // __CODEGEN__
 }
