@@ -67,11 +67,16 @@ extern "C" {
     GCallback callback;
   };
 
+  G_GNUC_INTERNAL int j_codegen_allocpc (JCodegen* codegen);
+
+  /* Backend-specific */
   G_GNUC_INTERNAL void j_codegen_absjump (JCodegen* codegen, gconstpointer value);
+
+  /* DynASM externs - API */
   G_GNUC_INTERNAL gint32 j_codegen_extern_find (JCodegen* codegen, gconstpointer address, const gchar* name, int type);
   G_GNUC_INTERNAL const JCodegenExtern* j_codegen_extern_lookup (const gchar *str, size_t len);
 
-  /* DynASM externs */
+  /* DynASM externs - callbacks */
   G_GNUC_INTERNAL void j_codegen_breakpoint ();
 
 #if __cplusplus

@@ -29,6 +29,8 @@ extern "C" {
   {
     gpointer context;
     gpointer* labels;
+    guint maxpc;
+    guint nextpc;
     guint n_labels;
   };
 

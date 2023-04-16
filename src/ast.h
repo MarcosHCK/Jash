@@ -31,8 +31,9 @@ typedef struct _GNode *Ast;
 #define ast_first(node) (({ Ast __node = ((node)); (Ast) g_node_first_child (__node); }))
 #define ast_next(node) (({ Ast __node = ((node)); (Ast) g_node_next_sibling (__node); }))
 #define ast_prev(node) (({ Ast __node = ((node)); (Ast) g_node_prev_sibling (__node); }))
-#define ast_find(node,type) (({ Ast __node = ((node)); guint __type = ((type)); g_node_find (__node, G_PRE_ORDER, G_TRAVERSE_ALL, GUINT_TO_POINTER (__type)); }))
-#define ast_find_child(node,type) (({ Ast __node = ((node)); guint __type = ((type)); g_node_find_child (__node, G_TRAVERSE_ALL, GUINT_TO_POINTER (__type)); }))
+#define ast_find(node,type) (({ Ast __node = ((node)); guint __type = ((type)); (Ast) g_node_find (__node, G_PRE_ORDER, G_TRAVERSE_ALL, GUINT_TO_POINTER (__type)); }))
+#define ast_find_child(node,type) (({ Ast __node = ((node)); guint __type = ((type)); (Ast) g_node_find_child (__node, G_TRAVERSE_ALL, GUINT_TO_POINTER (__type)); }))
+#define ast_n_children(node) (({ Ast __node = ((node)); (guint) g_node_n_children (__node); }))
 
 #if __cplusplus
 extern "C" {

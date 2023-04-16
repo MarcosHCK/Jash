@@ -313,7 +313,8 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
 { dumpwalker (walker);
   GError* tmperr = NULL;
   Ast child = NULL;
-  Ast ast = NULL;
+
+  Ast ast = ast_node (AST_INVOKE);
 
   const guint type = head->type;
   const gchar* value = head->value;
@@ -322,8 +323,6 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
     {
       case J_TOKEN_TYPE_BUILTIN:
         {
-          ast = ast_node (AST_BUILTIN);
-
           if (value == J_TOKEN_BUILTIN_AGAIN
             || value == J_TOKEN_BUILTIN_CD
             || value == J_TOKEN_BUILTIN_EXIT
@@ -337,7 +336,7 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
                 EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
               else
                 {
-                  ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
+                  ast_append (ast, ast_wrap (AST_BUILTIN, ast_data (value)));
                   ast_append (ast, child);
 
                   if (claim_arguments (ast, -1, 1, &tmperr), G_UNLIKELY (tmperr != NULL))
@@ -362,7 +361,7 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
                 EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
               else
                 {
-                  ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
+                  ast_append (ast, ast_wrap (AST_BUILTIN, ast_data (value)));
                   ast_append (ast, child);
 
                   if (claim_arguments (ast, -1, 0, &tmperr), G_UNLIKELY (tmperr != NULL))
@@ -386,7 +385,7 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
               else
                 {
                   guint n_arguments;
-                  ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
+                  ast_append (ast, ast_wrap (AST_BUILTIN, ast_data (value)));
                   ast_append (ast, child);
 
                   if ((n_arguments = claim_arguments (ast, -1, 2, &tmperr), G_LIKELY (tmperr == NULL)))
@@ -407,7 +406,6 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
                     }
                 }
             }
-
           break;
         }
 
@@ -417,7 +415,6 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
             EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
           else
             {
-              ast = ast_node (AST_INVOKE);
               ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
               ast_append (ast, child);
 
@@ -441,7 +438,6 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
             EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
           else
             {
-              ast = ast_node (AST_INVOKE);
               target = ast_first (child);
 
   #if DEVELOPER == 1
