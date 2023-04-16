@@ -21,15 +21,18 @@
 
 typedef struct _GNode *Ast;
 
-#define ast_node(type) (({ guint __type = ((type)); (Ast) g_node_new (GINT_TO_POINTER (__type)); }))
+#define ast_node(type) (({ guint __type = ((type)); (Ast) g_node_new (GUINT_TO_POINTER (__type)); }))
 #define ast_free(node) ((_g_node_destroy0 (node)))
-#define ast_retype(type,node) (({ guint __type = ((type)); Ast __node = ((node)); __node->data = GINT_TO_POINTER (__type); __node; }))
+#define ast_retype(type,node) (({ guint __type = ((type)); Ast __node = ((node)); __node->data = GUINT_TO_POINTER (__type); __node; }))
 #define ast_append(parent,node) ({ Ast __parent = ((parent)); Ast __node = ((node)); g_node_append (__parent, __node); })
 #define ast_unlink(node) (({ Ast __node = ((node)); g_node_unlink (__node); }))
 #define ast_type(node) (({ Ast __node = ((node)); (AstType) GPOINTER_TO_INT (__node->data); }))
+#define ast_parent(node) (({ Ast __node = ((node)); (Ast) ((GNode*) __node)->parent; }))
 #define ast_first(node) (({ Ast __node = ((node)); (Ast) g_node_first_child (__node); }))
 #define ast_next(node) (({ Ast __node = ((node)); (Ast) g_node_next_sibling (__node); }))
 #define ast_prev(node) (({ Ast __node = ((node)); (Ast) g_node_prev_sibling (__node); }))
+#define ast_find(node,type) (({ Ast __node = ((node)); guint __type = ((type)); g_node_find (__node, G_PRE_ORDER, G_TRAVERSE_ALL, GUINT_TO_POINTER (__type)); }))
+#define ast_find_child(node,type) (({ Ast __node = ((node)); guint __type = ((type)); g_node_find_child (__node, G_TRAVERSE_ALL, GUINT_TO_POINTER (__type)); }))
 
 #if __cplusplus
 extern "C" {

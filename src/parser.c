@@ -104,6 +104,7 @@ return NULL;
 #define locate(token) token->line,token->column
 #define EXCPT(before,after) G_STMT_START { G_STMT_START { before; } G_STMT_END; return after; } G_STMT_END
 #define THROW(code,...) ({ g_set_error (error, J_PARSER_ERROR, (code), __VA_ARGS__); })
+#define THROWL(code,literal) ({ g_set_error_literal (error, J_PARSER_ERROR, (code), ((literal))); })
 #define RETHROW(tmperr) ({ GError* __tmperr = ((tmperr)); g_propagate_error (error, __tmperr); })
 #define RETHROWP(tmperr,token) ({ GError* __tmperr = ((tmperr)); JToken* __token = ((token)); g_propagate_prefixed_error (error, __tmperr, "%d: %d: ", locate (__token)); })
 
@@ -168,6 +169,50 @@ static void collect (Walker* src, Walker* dst, GError** error, gint type, ...)
       }
     }
   EXCPT (({ Walker* walker = src; THROW_EOS (); }),);
+}
+
+static guint claim_arguments (Ast ast, gint min_arguments, gint max_arguments, GError** error)
+{
+  guint n_arguments = 0;
+  Ast arguments;
+  Ast child;
+
+  if ((arguments = ast_find_child (ast, AST_ARGUMENTS)) == NULL)
+    g_error ("(" G_STRLOC "): Fix this!");
+
+  child = ast_first (arguments);
+
+  while (child != NULL)
+    {
+      switch (ast_type (child))
+      {
+        default:
+          {
+            ++n_arguments;
+            child = ast_next (child);
+            break;
+          }
+
+        case AST_REDIRECT_INPUT:
+        case AST_REDIRECT_OUTPUT_APPEND:
+        case AST_REDIRECT_OUTPUT_REPLACE:
+          {
+            Ast next = ast_next (child);
+
+            ast_unlink (child);
+            ast_append (ast, child);
+            child = next;
+            break;
+          }
+      }
+    }
+
+  if (min_arguments >= 0 && (n_arguments < min_arguments))
+    THROWL (J_PARSER_ERROR_TOO_FEW_ARGUMENTS, "");
+  else
+  if (max_arguments >= 0 && (n_arguments > max_arguments))
+    THROWL (J_PARSER_ERROR_TOO_MANY_ARGUMENTS, "");
+return (n_arguments);
 }
 
 static Ast walk_arguments (Walker* walker, GError** error)
@@ -243,15 +288,15 @@ static Ast walk_arguments (Walker* walker, GError** error)
                         if (redirect == NULL)
                           ast_append (ast, child);
                         else
-                        {
-                          if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_APPEND)
-                            ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_APPEND, ast_data (value)));
-                          else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_READ)
-                            ast_append (ast, ast_wrap (AST_REDIRECT_INPUT, ast_data (value)));
-                          else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_WRITE)
-                            ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_REPLACE, ast_data (value)));
-                            g_steal_pointer (&redirect);
-                        }
+                          {
+                            if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_APPEND)
+                              ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_APPEND, ast_data (value)));
+                            else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_READ)
+                              ast_append (ast, ast_wrap (AST_REDIRECT_INPUT, ast_data (value)));
+                            else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_WRITE)
+                              ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_REPLACE, ast_data (value)));
+                              g_steal_pointer (&redirect);
+                          }
                       }
                   }
               }
@@ -267,6 +312,7 @@ return (ast);
 static Ast walk_command (Walker* walker, JToken* head, GError** error)
 { dumpwalker (walker);
   GError* tmperr = NULL;
+  Ast child = NULL;
   Ast ast = NULL;
 
   const guint type = head->type;
@@ -287,17 +333,24 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
             || value == J_TOKEN_BUILTIN_HISTORY
             || value == J_TOKEN_BUILTIN_UNSET)
             {
-              if (walker_length (walker) > 1)
-                EXCPT (THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%d: %d: Too many arguments for '%s'", locate (head), value), (ast_free (ast), NULL));
+              if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
+                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
               else
                 {
-                  Ast child;
                   ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
+                  ast_append (ast, child);
 
-                  if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                    EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
-                  else
-                    ast_append (ast, child);
+                  if (claim_arguments (ast, -1, 1, &tmperr), G_UNLIKELY (tmperr != NULL))
+                    {
+                      if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_TOO_FEW_ARGUMENTS))
+                        g_propagate_prefixed_error (error, tmperr, "%d: %d: Too few arguments for '%s'", locate (head), value);
+                      else
+                      if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_TOO_MANY_ARGUMENTS))
+                        g_propagate_prefixed_error (error, tmperr, "%d: %d: Too many arguments for '%s'", locate (head), value);
+                      else
+                        g_propagate_error (error, tmperr);
+                      return (ast_free (ast), NULL);
+                    }
                 }
             }
           else
@@ -305,32 +358,53 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
             || value == J_TOKEN_BUILTIN_JOBS
             || value == J_TOKEN_BUILTIN_TRUE)
             {
-              if (walker_length (walker) > 0)
-                EXCPT (THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%d: %d: Too many arguments for '%s'", locate (head), value), (ast_free (ast), NULL));
-              G_STMT_START
+              if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
+                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+              else
                 {
-                  Ast child;
                   ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
-                  ast_append (ast, ast_node (AST_ARGUMENTS));
+                  ast_append (ast, child);
+
+                  if (claim_arguments (ast, -1, 0, &tmperr), G_UNLIKELY (tmperr != NULL))
+                    {
+                      if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_TOO_FEW_ARGUMENTS))
+                        g_propagate_prefixed_error (error, tmperr, "%d: %d: Too few arguments for '%s'", locate (head), value);
+                      else
+                      if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_TOO_MANY_ARGUMENTS))
+                        g_propagate_prefixed_error (error, tmperr, "%d: %d: Too many arguments for '%s'", locate (head), value);
+                      else
+                        g_propagate_error (error, tmperr);
+                      return (ast_free (ast), NULL);
+                    }
                 }
-              G_STMT_END;
             }
           else
           if (value == J_TOKEN_BUILTIN_SET)
             {
-              if (walker_length (walker) > 2)
-                EXCPT (THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%d: %d: Too many arguments for '%s'", locate (head), value), (ast_free (ast), NULL));
-              else if (walker_length (walker) == 1)
-                EXCPT (THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%d: %d: Too few arguments for '%s'", locate (head), value), (ast_free (ast), NULL));
+              if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
+                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
               else
                 {
-                  Ast child;
+                  guint n_arguments;
                   ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
+                  ast_append (ast, child);
 
-                  if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                    EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                  if ((n_arguments = claim_arguments (ast, -1, 2, &tmperr), G_LIKELY (tmperr == NULL)))
+                    {
+                      if (G_UNLIKELY (n_arguments == 1))
+                        THROW (J_PARSER_ERROR_TOO_FEW_ARGUMENTS, "%d: %d: Too few arguments for '%s'", locate (head), value);
+                    }
                   else
-                    ast_append (ast, child);
+                    {
+                      if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_TOO_FEW_ARGUMENTS))
+                        g_propagate_prefixed_error (error, tmperr, "%d: %d: Too few arguments for '%s'", locate (head), value);
+                      else
+                      if (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_TOO_MANY_ARGUMENTS))
+                        g_propagate_prefixed_error (error, tmperr, "%d: %d: Too many arguments for '%s'", locate (head), value);
+                      else
+                        g_propagate_error (error, tmperr);
+                      return (ast_free (ast), NULL);
+                    }
                 }
             }
 
@@ -339,13 +413,17 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
 
       case J_TOKEN_TYPE_LITERAL:
         {
-          Ast child;
-          ast_append ((ast = ast_node (AST_INVOKE)), ast_wrap (AST_TARGET, ast_data (value)));
-
           if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
             EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
           else
-            ast_append (ast, child);
+            {
+              ast = ast_node (AST_INVOKE);
+              ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
+              ast_append (ast, child);
+
+              if (claim_arguments (ast, -1, -1, &tmperr), G_UNLIKELY (tmperr != NULL))
+                g_error ("(" G_STRLOC "): Fix this!");
+            }
           break;
         }
 
@@ -356,7 +434,6 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
   #endif // DEVELOPER
           Walker walker2 = WALKER_INIT;
           Ast target = NULL;
-          Ast child = NULL;
 
           walker_leave (walker, head);
 
@@ -372,8 +449,11 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
   #endif // DEVELOPER
 
               ast_unlink (target);
-              ast_append (ast, child);
               ast_append (ast, ast_wrap (AST_TARGET, target));
+              ast_append (ast, child);
+
+              if (claim_arguments (ast, -1, -1, &tmperr), G_UNLIKELY (tmperr != NULL))
+                g_error ("(" G_STRLOC "): Fix this!");
             }
           break;
         }
