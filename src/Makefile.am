@@ -80,6 +80,7 @@ jash_LDADD=\
 libcodegen_la_SOURCES=\
 	codegen_closure.c \
 	codegen_common.c \
+	codegen_externs.c \
 	codegen_${host_cpu}.c \
 	$(VOID)
 libcodegen_la_CFLAGS=\

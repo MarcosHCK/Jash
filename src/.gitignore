@@ -35,3 +35,4 @@ codegen_*.c
 !codegen_*.dasc.c
 !codegen_closure.c
 !codegen_common.[ch]
+!codegen_externs.stringlist

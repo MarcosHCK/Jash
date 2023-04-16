@@ -17,7 +17,6 @@
  */
 #include <config.h>
 #include <codegen_common.h>
-#include <dynasm/dasm_x86.h>
 
 #ifdef __CODEGEN__
 |.arch x64
@@ -34,6 +33,7 @@ static const unsigned char actions[];
 static const char* const globl_names[];
 static const char* const extern_names[];
 #endif // __CODEGEN__
+#include <dynasm/dasm_x86.h>
 
 #define stacksz_r \
   ( \
@@ -86,6 +86,16 @@ void j_codegen_init (Dst_DECL)
   dasm_growpc (Dst, 0);
 }
 
+void j_codegen_absjump (Dst_DECL, gconstpointer value)
+{
+#if __CODEGEN__
+  |.code
+  |->main:
+  | mov64 rax, ((guint64) value)
+  | jmp rax
+#endif // __CODEGEN__
+}
+
 void j_codegen_prologue (Dst_DECL)
 {
 #if __CODEGEN__
@@ -99,6 +109,7 @@ void j_codegen_prologue (Dst_DECL)
   | mov Jash, rcx
   | mov Error, rdx
 # endif // G_OS_UNIX
+  | call extern breakpoint
 #endif // __CODEGEN__
 }
 

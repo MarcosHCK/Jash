@@ -21,23 +21,27 @@
 #include <codegen.h>
 
 typedef struct _JCodegenClosure JCodegenClosure;
+typedef struct _JCodegenExtern JCodegenExtern;
 
 #define DASM_FDEF G_GNUC_INTERNAL
-#define DASM_EXTERN(ctx, addr, idx, type) 0
+#define DASM_EXTERN(ctx, addr, idx, type) \
+    (j_codegen_extern_find ((ctx), (addr), extern_names [(idx)], (type)))
 #define DASM_M_GROW(ctx, t, p, sz, need) \
-    G_STMT_START { \
-      size_t _sz = (sz), _need = (need); \
-      if (_sz < _need) \
+    G_STMT_START \
       { \
-        if (_sz < 16) _sz = 16; \
-        while (_sz < _need) \
-          _sz += _sz; \
-        (p) = (t *) g_realloc ((p), _sz); \
-        if ((p) == NULL) \
-          exit (1); \
-        (sz) = _sz; \
+        size_t _sz = (sz), _need = (need); \
+        if (_sz < _need) \
+        { \
+          if (_sz < 16) _sz = 16; \
+          while (_sz < _need) \
+            _sz += _sz; \
+          (p) = (t *) g_realloc ((p), _sz); \
+          if ((p) == NULL) \
+            exit (1); \
+          (sz) = _sz; \
+        } \
       } \
-    } G_STMT_END
+    G_STMT_END
 #define DASM_M_FREE(ctx, p, sz) g_free (p)
 
 #define Dst_DECL JCodegen* Dst
@@ -56,6 +60,19 @@ extern "C" {
     gpointer block;
     gsize blocksz;
   };
+
+  struct _JCodegenExtern
+  {
+    int name;
+    GCallback callback;
+  };
+
+  G_GNUC_INTERNAL void j_codegen_absjump (JCodegen* codegen, gconstpointer value);
+  G_GNUC_INTERNAL gint32 j_codegen_extern_find (JCodegen* codegen, gconstpointer address, const gchar* name, int type);
+  G_GNUC_INTERNAL const JCodegenExtern* j_codegen_extern_lookup (const gchar *str, size_t len);
+
+  /* DynASM externs */
+  G_GNUC_INTERNAL void j_codegen_breakpoint ();
 
 #if __cplusplus
 }
