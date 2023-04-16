@@ -20,25 +20,28 @@
 #include <ast.h>
 #include <codegen.h>
 
-typedef struct _JClosure JClosure;
+typedef struct _JCodegenClosure JCodegenClosure;
 
 #define DASM_FDEF G_GNUC_INTERNAL
 #define DASM_EXTERN(ctx, addr, idx, type) 0
 #define DASM_M_GROW(ctx, t, p, sz, need) \
-  G_STMT_START { \
-    size_t _sz = (sz), _need = (need); \
-    if (_sz < _need) \
-    { \
-      if (_sz < 16) _sz = 16; \
-      while (_sz < _need) \
-        _sz += _sz; \
-      (p) = (t *) g_realloc ((p), _sz); \
-      if ((p) == NULL) \
-        exit (1); \
-      (sz) = _sz; \
-    } \
-  } G_STMT_END
-#define DASM_M_FREE(ctx, p, sz) g_free(p);
+    G_STMT_START { \
+      size_t _sz = (sz), _need = (need); \
+      if (_sz < _need) \
+      { \
+        if (_sz < 16) _sz = 16; \
+        while (_sz < _need) \
+          _sz += _sz; \
+        (p) = (t *) g_realloc ((p), _sz); \
+        if ((p) == NULL) \
+          exit (1); \
+        (sz) = _sz; \
+      } \
+    } G_STMT_END
+#define DASM_M_FREE(ctx, p, sz) g_free (p)
+
+#define Dst_DECL JCodegen* Dst
+#define Dst_REF (Dst->context)
 
 #include <dynasm/dasm_proto.h>
 
@@ -46,7 +49,7 @@ typedef struct _JClosure JClosure;
 extern "C" {
 #endif // __cplusplus
 
-  struct _JClosure
+  struct _JCodegenClosure
   {
     GClosure closure;
     GCallback entry;

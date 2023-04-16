@@ -26,7 +26,7 @@
 # endif // !MAP_ANONYMOUS && MAP_ANON
 #endif // G_OS_WIN32
 
-static void closure_notify (gpointer notify_data, JClosure* jc)
+static void closure_notify (gpointer notify_data, JCodegenClosure* jc)
 {
 #ifdef G_OS_WIN32
   VirtualFree (jc->block, jc->blocksz, 0);
@@ -35,21 +35,20 @@ static void closure_notify (gpointer notify_data, JClosure* jc)
 #endif // G_OS_WIN32
 }
 
-G_STATIC_ASSERT (G_STRUCT_OFFSET (JClosure, entry) == G_STRUCT_OFFSET (GCClosure, callback));
+G_STATIC_ASSERT (G_STRUCT_OFFSET (JCodegenClosure, entry) == G_STRUCT_OFFSET (GCClosure, callback));
 
-GClosure* j_codegen_emit (JCodegen* codegen)
+GClosure* j_codegen_emit (Dst_DECL)
 {
-  Dst_DECL = (dasm_State**) &codegen->context;
+  JCodegenClosure* jc = NULL;
   GClosure* gc = NULL;
-  JClosure* jc = NULL;
   int result = 0;
   size_t sz;
 
   if ((result = dasm_link (Dst, &sz)), G_UNLIKELY (result != 0))
     g_error ("(" G_STRLOC "): dasm_link()!");
 
-  gc = g_closure_new_simple (sizeof (JClosure), NULL);
-  jc = (JClosure*) gc;
+  gc = g_closure_new_simple (sizeof (*jc), NULL);
+  jc = (JCodegenClosure*) gc;
 
   g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_notify);
   g_closure_set_marshal (gc, g_cclosure_marshal_VOID__POINTER);
@@ -64,10 +63,9 @@ GClosure* j_codegen_emit (JCodegen* codegen)
   jc->block = mmap (0, sz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #endif // G_OS_WIN32
 
-  if ((result = dasm_encode(Dst, jc->block)), G_UNLIKELY(result != 0))
+  if ((result = dasm_encode (Dst, jc->block)), G_UNLIKELY (result != 0))
     g_error("(" G_STRLOC "): dasm_encode()!");
 
-  jc->entry = G_CALLBACK (codegen->labels [J_CODEGEN_LABEL_MAIN]);
 #ifdef G_OS_WIN32
   G_STMT_START
     {
@@ -78,5 +76,5 @@ GClosure* j_codegen_emit (JCodegen* codegen)
 #else // !G_OS_WIN32
   mprotect (jc->block, sz, PROT_READ | PROT_EXEC);
 #endif // G_OS_WIN32
-return (GClosure*) jc;
+return (jc->entry = G_CALLBACK (Dst->labels [J_CODEGEN_LABEL_MAIN]), gc);
 }

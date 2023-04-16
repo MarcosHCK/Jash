@@ -75,21 +75,19 @@ static void dumpbuffer (Dst_DECL, gconstpointer data, gsize buffsz)
     }
 }
 
-void j_codegen_init (JCodegen* codegen)
+void j_codegen_init (Dst_DECL)
 {
-  Dst_DECL = (dasm_State**) &codegen->context;
-  codegen->n_labels = globl__MAX;
-  codegen->labels = g_new (gpointer, globl__MAX);
+  Dst->n_labels = globl__MAX;
+  Dst->labels = g_new (gpointer, globl__MAX);
 
   dasm_init (Dst, DASM_MAXSECTION);
-  dasm_setupglobal (Dst, codegen->labels, globl__MAX);
+  dasm_setupglobal (Dst, Dst->labels, globl__MAX);
   dasm_setup (Dst, actions);
   dasm_growpc (Dst, 0);
 }
 
-void j_codegen_prologue (JCodegen* codegen)
+void j_codegen_prologue (Dst_DECL)
 {
-  Dst_DECL = (dasm_State**) &codegen->context;
 #if __CODEGEN__
   |.code
   |->main:
@@ -104,9 +102,8 @@ void j_codegen_prologue (JCodegen* codegen)
 #endif // __CODEGEN__
 }
 
-void j_codegen_epilogue (JCodegen* codegen)
+void j_codegen_epilogue (Dst_DECL)
 {
-  Dst_DECL = (dasm_State**) &codegen->context;
 #if __CODEGEN__
   | add rsp, (stacksz_r)
   | mov rax, RetContinue
@@ -114,7 +111,6 @@ void j_codegen_epilogue (JCodegen* codegen)
 #endif // __CODEGEN__
 }
 
-void j_codegen_generate (JCodegen* codegen, Ast ast)
+void j_codegen_generate (Dst_DECL, Ast ast)
 {
-  Dst_DECL = (dasm_State**) &codegen->context;
 }

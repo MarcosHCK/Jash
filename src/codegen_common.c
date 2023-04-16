@@ -18,8 +18,8 @@
 #include <config.h>
 #include <codegen_common.h>
 
-void j_codegen_clear (JCodegen* codegen)
+void j_codegen_clear (Dst_DECL)
 {
-  dasm_free ((dasm_State**) &codegen->context);
-  g_clear_pointer (&codegen->labels, g_free);
+  dasm_free (Dst);
+  g_free (Dst->labels);
 }
