@@ -23,6 +23,8 @@
 typedef struct _JCodegenClosure JCodegenClosure;
 typedef struct _JCodegenExtern JCodegenExtern;
 
+typedef gboolean (*JCodegenClosureCallback) (JCodegenClosure* jc, GError** error);
+
 #define DASM_FDEF G_GNUC_INTERNAL
 #define DASM_EXTERN(ctx, addr, idx, type) \
     (j_codegen_extern_find ((ctx), (addr), extern_names [(idx)], (type)))
@@ -37,7 +39,7 @@ typedef struct _JCodegenExtern JCodegenExtern;
             _sz += _sz; \
           (p) = (t *) g_realloc ((p), _sz); \
           if ((p) == NULL) \
-            exit (1); \
+            g_assert_not_reached (); \
           (sz) = _sz; \
         } \
       } \
@@ -57,8 +59,13 @@ extern "C" {
   {
     GClosure closure;
     GCallback entry;
+
+    /* executable block */
     gpointer block;
     gsize blocksz;
+
+    /* internal state */
+    GQueue watched;
   };
 
   struct _JCodegenExtern
@@ -77,7 +84,7 @@ extern "C" {
   G_GNUC_INTERNAL const JCodegenExtern* j_codegen_extern_lookup (const gchar *str, size_t len);
 
   /* DynASM externs - callbacks */
-  G_GNUC_INTERNAL void j_codegen_breakpoint ();
+  G_GNUC_INTERNAL void j_codegen_extern_breakpoint ();
 
 #if __cplusplus
 }

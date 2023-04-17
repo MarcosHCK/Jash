@@ -18,6 +18,7 @@
  */
 #include <config.h>
 #include <codegen_common.h>
+#include <unistd.h>
 %}
 
 %struct-type
@@ -28,7 +29,9 @@
 
 struct _JCodegenExtern {};
 %%
-breakpoint, G_CALLBACK (j_codegen_breakpoint)
+breakpoint, G_CALLBACK (j_codegen_extern_breakpoint)
+execvp, G_CALLBACK (execvp)
+fork, G_CALLBACK (fork)
 %%
 
 G_LOCK_DEFINE_STATIC (lowtable);
@@ -92,11 +95,6 @@ static inline gboolean lowget (gint32* offset, gconstpointer address, gconstpoin
 return adjust (offset, address, jc->entry, type);
 }
 
-void j_codegen_breakpoint ()
-{
-  G_BREAKPOINT ();
-}
-
 gint32 j_codegen_extern_find (Dst_DECL, gconstpointer address, const gchar* name, int type)
 {
   JCodegenExtern* extern_ = NULL;
@@ -109,4 +107,9 @@ gint32 j_codegen_extern_find (Dst_DECL, gconstpointer address, const gchar* name
   if ((good = (gboolean) lowget (&offset, address, extern_->callback, type)) == FALSE)
     g_error ("(" G_STRLOC "): Extern '%s' offset above 2 GB limit", name);
 return offset;
+}
+
+void j_codegen_extern_breakpoint ()
+{
+  G_BREAKPOINT ();
 }

@@ -103,19 +103,16 @@ return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (
 
 gboolean j_ash_run (JAsh* self, GClosure* closure, GError** error)
 {
-  GValue values [2] = { G_VALUE_INIT };
+  GValue values [1] = { G_VALUE_INIT };
   GValue result [1] = { G_VALUE_INIT };
   gboolean return_;
 
-  g_value_init (values + 0, J_TYPE_ASH);
-  g_value_init (values + 1, G_TYPE_POINTER);
+  g_value_init (values + 0, G_TYPE_POINTER);
   g_value_init (result, G_TYPE_BOOLEAN);
 
-  g_value_set_object (values + 0, self);
-  g_value_set_pointer (values + 1, error);
+  g_value_set_pointer (values + 0, error);
 
-  g_closure_invoke (closure, result, 2, values, NULL);
-  g_value_unset (values + 1);
+  g_closure_invoke (closure, result, 1, values, NULL);
   g_value_unset (values + 0);
 return (return_ = g_value_get_boolean (result), g_value_unset (result), return_);
 }

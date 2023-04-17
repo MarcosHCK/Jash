@@ -33,9 +33,19 @@ static void closure_notify (gpointer notify_data, JCodegenClosure* jc)
 #else // !G_OS_WIN32
   munmap (jc->block, jc->blocksz);
 #endif // G_OS_WIN32
+  g_queue_clear_full (&jc->watched, (GDestroyNotify) g_spawn_close_pid);
 }
 
-G_STATIC_ASSERT (G_STRUCT_OFFSET (JCodegenClosure, entry) == G_STRUCT_OFFSET (GCClosure, callback));
+static void closure_marshal (JCodegenClosure* jc, GValue* return_value, guint n_param_values, const GValue* param_values)
+{
+  g_return_if_fail (return_value != NULL);
+  g_return_if_fail (n_param_values == 1);
+  g_return_if_fail (param_values != NULL);
+
+  JCodegenClosureCallback callback = (gpointer) jc->entry;
+
+  g_value_set_boolean (return_value, callback (jc, g_value_get_pointer (param_values + 0)));
+}
 
 GClosure* j_codegen_emit (Dst_DECL)
 {
@@ -51,10 +61,13 @@ GClosure* j_codegen_emit (Dst_DECL)
   jc = (JCodegenClosure*) gc;
 
   g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_notify);
-  g_closure_set_marshal (gc, g_cclosure_marshal_VOID__POINTER);
+  g_closure_set_marshal (gc, (GClosureMarshal) closure_marshal);
 
-  g_closure_ref (gc);
-  g_closure_sink (gc);
+  if (G_LIKELY (gc->floating))
+    {
+      g_closure_ref (gc);
+      g_closure_sink (gc);
+    }
 
   jc->blocksz = sz;
 #if G_OS_WIN32
@@ -66,6 +79,10 @@ GClosure* j_codegen_emit (Dst_DECL)
   if ((result = dasm_encode (Dst, jc->block)), G_UNLIKELY (result != 0))
     g_error("(" G_STRLOC "): dasm_encode()!");
 
+  GError* tmperr = NULL;
+  g_file_set_contents ("/home/marcos/Desktop/closure", jc->block, sz, &tmperr);
+  g_assert_no_error (tmperr);
+
 #ifdef G_OS_WIN32
   G_STMT_START
     {
@@ -76,5 +93,6 @@ GClosure* j_codegen_emit (Dst_DECL)
 #else // !G_OS_WIN32
   mprotect (jc->block, sz, PROT_READ | PROT_EXEC);
 #endif // G_OS_WIN32
+  g_queue_init (&jc->watched);
 return (jc->entry = G_CALLBACK (Dst->labels [J_CODEGEN_LABEL_MAIN]), gc);
 }
