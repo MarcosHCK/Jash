@@ -16,15 +16,5 @@
 # along with JASH. If not, see <http://www.gnu.org/licenses/>.
 #
 
-*.[ao]
-*.la
-*.lai
-*.lo
-*.old
-*.Po
-*.Plo
-*.Tpo
-.dirstamp
-
-jash
-jash.exe
+*.c
+!*.dasc.c

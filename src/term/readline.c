@@ -16,10 +16,10 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <histcontrol.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-#include <readline.h>
+#include <term/histcontrol.h>
+#include <term/readline.h>
 
 #define J_READLINE_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_READLINE, JReadlineClass))
 #define J_IS_READLINE_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_READLINE))

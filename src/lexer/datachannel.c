@@ -16,7 +16,7 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <datachannel.h>
+#include <lexer/datachannel.h>
 
 struct _JIOChannel
 {

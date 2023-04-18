@@ -15,19 +15,21 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_CODEGEN_COMMON__
-#define __JASH_CODEGEN_COMMON__ 1
-#include <ast.h>
-#include <codegen.h>
+#ifndef __JASH_CODEGEN_CONTEXT__
+#define __JASH_CODEGEN_CONTEXT__ 1
+#include <codegen/block.h>
+#include <codegen/codegen.h>
 
-typedef struct _JCodegenClosure JCodegenClosure;
-typedef struct _JCodegenExtern JCodegenExtern;
+typedef struct _JContext JContext;
+typedef struct _JClosure JClosure;
+typedef struct _JExtern JExtern;
 
-typedef gboolean (*JCodegenClosureCallback) (JCodegenClosure* jc, GError** error);
+#define Dst_DECL JContext* Dst
+#define Dst_REF (Dst->state)
 
 #define DASM_FDEF G_GNUC_INTERNAL
 #define DASM_EXTERN(ctx, addr, idx, type) \
-    (j_codegen_extern_find ((ctx), (addr), extern_names [(idx)], (type)))
+    (j_extern_search ((ctx), (addr), extern_names [(idx)], (type)))
 #define DASM_M_GROW(ctx, t, p, sz, need) \
     G_STMT_START \
       { \
@@ -45,49 +47,50 @@ typedef gboolean (*JCodegenClosureCallback) (JCodegenClosure* jc, GError** error
       } \
     G_STMT_END
 #define DASM_M_FREE(ctx, p, sz) g_free (p)
-
-#define Dst_DECL JCodegen* Dst
-#define Dst_REF (Dst->context)
-
 #include <dynasm/dasm_proto.h>
 
+#define J_CONTEXT_LABEL_MAIN (0)
+
 #if __cplusplus
-extern "C" {
+extern "C"
+{
 #endif // __cplusplus
 
-  struct _JCodegenClosure
+  struct _JContext
+  {
+    dasm_State* state;
+    gpointer* labels;
+    guint maxpc;
+    guint nextpc;
+    guint n_labels;
+  };
+
+  struct _JClosure
   {
     GClosure closure;
-    GCallback entry;
-
-    /* executable block */
-    gpointer block;
-    gsize blocksz;
-
-    /* internal state */
-    GQueue watched;
+    gpointer entry;
+    JBlock block;
   };
 
-  struct _JCodegenExtern
+  struct _JExtern
   {
-    int name;
-    GCallback callback;
+    gint name;
+    GCallback address;
   };
 
-  G_GNUC_INTERNAL int j_codegen_allocpc (JCodegen* codegen);
+  G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gpointer buffer, gsize bufsz);
+  G_GNUC_INTERNAL void j_context_epilog (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast);
+  G_GNUC_INTERNAL void j_context_init (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_ljmp (Dst_DECL, gpointer address);
+  G_GNUC_INTERNAL void j_context_prolog (Dst_DECL);
 
-  /* Backend-specific */
-  G_GNUC_INTERNAL void j_codegen_absjump (JCodegen* codegen, gconstpointer value);
-
-  /* DynASM externs - API */
-  G_GNUC_INTERNAL gint32 j_codegen_extern_find (JCodegen* codegen, gconstpointer address, const gchar* name, int type);
-  G_GNUC_INTERNAL const JCodegenExtern* j_codegen_extern_lookup (const gchar *str, size_t len);
-
-  /* DynASM externs - callbacks */
-  G_GNUC_INTERNAL void j_codegen_extern_breakpoint ();
+  G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
+  G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
 
 #if __cplusplus
 }
 #endif // __cplusplus
 
-#endif // __JASH_CODEGEN_COMMON__
+#endif // __JASH_CODEGEN_CONTEXT__

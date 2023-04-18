@@ -17,9 +17,10 @@
  */
 #include <config.h>
 #include <jash.h>
-#include <lexer.h>
-#include <parser.h>
-#include <readline.h>
+#include <codegen/codegen.h>
+#include <lexer/lexer.h>
+#include <parser/parser.h>
+#include <term/readline.h>
 
 #define J_ASH_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_ASH, JAshClass))
 #define J_IS_ASH_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_ASH))
@@ -34,6 +35,7 @@ struct _JAsh
   GObject parent;
 
   /*<private>*/
+  JCodegen* codegen;
   JLexer* lexer;
   JParser* parser;
   JReadline* readline; /* lazy */
@@ -55,6 +57,7 @@ G_OBJECT_CLASS (j_ash_parent_class)->finalize (pself);
 static void j_ash_class_dispose (GObject* pself)
 {
   JAsh* self = (gpointer) pself;
+  _g_object_unref0 (self->codegen);
   _g_object_unref0 (self->lexer);
   _g_object_unref0 (self->parser);
   _g_object_unref0 (self->readline);
@@ -69,36 +72,57 @@ static void j_ash_class_init (JAshClass* klass)
 
 static void j_ash_init (JAsh* self)
 {
+  self->codegen = j_codegen_new ();
   self->lexer = j_lexer_new ();
   self->parser = j_parser_new ();
 }
 
-GClosure* j_ash_load_data (JAsh* self, const gchar* data, GError** error)
+static GClosure* load (JAsh* self, const gchar* source, gboolean from_file, GError** error)
 {
   JTokens* tokens = NULL;
+  JAst* ast = NULL;
   GClosure* closure = NULL;
   GError* tmperr = NULL;
 
-  if ((tokens = j_lexer_scan_from_data (self->lexer, data, strlen (data), &tmperr)), G_UNLIKELY (tmperr != NULL))
+  if (from_file)
+    {
+      if ((tokens = j_lexer_scan_from_file (self->lexer, source, &tmperr)), G_UNLIKELY (tmperr != NULL))
+        {
+          g_propagate_error (error, tmperr);
+          j_tokens_unref (tokens);
+        }
+    }
+  else
+    {
+      if ((tokens = j_lexer_scan_from_data (self->lexer, source, strlen (source), &tmperr)), G_UNLIKELY (tmperr != NULL))
+        {
+          g_propagate_error (error, tmperr);
+          j_tokens_unref (tokens);
+        }
+    }
+
+  if ((ast = j_parser_parse (self->parser, tokens, &tmperr), j_tokens_unref (tokens)), G_UNLIKELY (tmperr != NULL))
+    {
+      g_propagate_prefixed_error (error, tmperr, "%s: ", (from_file) ? source : "(stdin)");
+      return NULL;
+    }
+
+  if ((closure = j_codegen_emit (self->codegen, ast, &tmperr), j_ast_free (ast)), G_UNLIKELY (tmperr != NULL))
     {
       g_propagate_error (error, tmperr);
-      j_tokens_unref (tokens);
+      return NULL;
     }
-return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
+return (closure);
+}
+
+GClosure* j_ash_load_data (JAsh* self, const gchar* data, GError** error)
+{
+  return load (self, data, 0, error);
 }
 
 GClosure* j_ash_load_file (JAsh* self, const gchar* filename, GError** error)
 {
-  JTokens* tokens = NULL;
-  GClosure* closure = NULL;
-  GError* tmperr = NULL;
-
-  if ((tokens = j_lexer_scan_from_file (self->lexer, filename, &tmperr)), G_UNLIKELY (tmperr != NULL))
-    {
-      g_propagate_error (error, tmperr);
-      j_tokens_unref (tokens);
-    }
-return (closure = j_parser_parse (self->parser, tokens, error), j_tokens_unref (tokens), closure);
+  return load (self, filename, 1, error);
 }
 
 gboolean j_ash_run (JAsh* self, GClosure* closure, GError** error)

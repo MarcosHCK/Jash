@@ -16,24 +16,23 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <datachannel.h>
-#include <fdchannel.h>
-#include <lexer.h>
-#include <glib-unix.h>
-#include <fcntl.h>
+#include <lexer/datachannel.h>
+#include <lexer/lexer.h>
+#include <lexer/private.h>
 
 #define J_LEXER_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_LEXER, JLexerClass))
 #define J_IS_LEXER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_LEXER))
 #define J_LEXER_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_LEXER, JLexerClass))
 typedef struct _JLexerClass JLexerClass;
-#define BLOCK_SIZ (512)
-#define N_CLASSES (23)
+#define _g_match_info_free0(var) ((var == NULL) ? NULL : (var = (g_match_info_free(var), NULL)))
+#define _j_tokens_unref0(var) ((var == NULL) ? NULL : (var = (j_tokens_unref(var), NULL)))
 typedef struct _TokenClass TokenClass;
 static gint search (JLexer* lexer, JTokens* tokens, const gchar* input, gsize length, gsize line, gsize column, GError** error);
 static gint breakdown (JLexer* lexer, JTokens* tokens, const gchar* input, gsize length, gsize line, gsize column, TokenClass* klass, GMatchInfo* info, GError** error);
 #define close_channel(channel) (({ GIOChannel* __channel = ((channel)); g_io_channel_shutdown (__channel, 1, NULL); g_io_channel_unref (__channel); }))
-#define _g_match_info_free0(var) ((var == NULL) ? NULL : (var = (g_match_info_free (var), NULL)))
-#define _j_tokens_unref0(var) ((var == NULL) ? NULL : (var = (j_tokens_unref (var), NULL)))
+
+#define BLOCK_SIZ (512)
+#define N_CLASSES (23)
 
 struct _JLexer
 {
@@ -57,21 +56,6 @@ struct _TokenClass
 G_DEFINE_FINAL_TYPE (JLexer, j_lexer, G_TYPE_OBJECT);
 G_DEFINE_QUARK (j-lexer-error-quark, j_lexer_error);
 
-static TokenClass token_klass (JTokenType type, const gchar* pattern)
-{
-  GError* tmperr = NULL;
-  GRegex* regex = g_regex_new (pattern, G_REGEX_OPTIMIZE, 0, &tmperr);
-                g_assert_no_error (tmperr);
-  TokenClass klass = { type, regex, };
-return klass;
-}
-
-static TokenClass token_klass_null ()
-{
-  TokenClass klass = {0};
-return klass;
-}
-
 static void j_lexer_class_finalize (GObject* pself)
 {
   JLexer* self = (gpointer) pself;
@@ -90,6 +74,16 @@ static void j_lexer_class_init (JLexerClass* klass)
 
 static void j_lexer_init (JLexer* self)
 {
+#define token_klass(type,pattern) \
+    (({ \
+      GError* __tmperr = NULL; \
+      GRegex* __regex = g_regex_new (((pattern)), G_REGEX_OPTIMIZE, 0, &__tmperr); \
+        g_assert_no_error (__tmperr); \
+      JTokenType __type = ((type)); \
+      TokenClass __klass = { __type, __regex, }; \
+        (__klass); \
+      }))
+
   self->classes = g_new (TokenClass, N_CLASSES);
   typedef gchar linecount [__LINE__ + 1];
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_COMMENT, "#(.*)");
@@ -116,6 +110,7 @@ static void j_lexer_init (JLexer* self)
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, "[\n;]");
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_LITERAL, "[^\\s]+");
   G_STATIC_ASSERT (N_CLASSES == __LINE__ - sizeof (linecount));
+#undef token_klass
 }
 
 JLexer* j_lexer_new ()
@@ -125,11 +120,11 @@ JLexer* j_lexer_new ()
 
 JTokens* j_lexer_scan_from_channel (JLexer* lexer, GIOChannel* channel, GError** error)
 {
-  g_return_val_if_fail (lexer != NULL, NULL);
+  g_return_val_if_fail (J_IS_LEXER (lexer), NULL);
   g_return_val_if_fail (channel != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JLexer* self = (lexer);
-  JTokens* tokens = j_tokens_new ();
+  JTokens* tokens = _j_tokens_new ();
 
   GString* line = g_string_sized_new (BLOCK_SIZ);
   gsize terminator_pos, n_line = 1;
@@ -173,7 +168,7 @@ return tokens;
 
 JTokens* j_lexer_scan_from_data (JLexer* lexer, const gchar* data, gssize length, GError** error)
 {
-  g_return_val_if_fail (lexer != NULL, NULL);
+  g_return_val_if_fail (J_IS_LEXER (lexer), NULL);
   g_return_val_if_fail (data != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JLexer* self = (lexer);
@@ -189,23 +184,21 @@ return (tokens = j_lexer_scan_from_channel (self, channel, error), close_channel
 
 JTokens* j_lexer_scan_from_file (JLexer* lexer, const gchar* filename, GError** error)
 {
-  g_return_val_if_fail (lexer != NULL, NULL);
+  g_return_val_if_fail (J_IS_LEXER (lexer), NULL);
   g_return_val_if_fail (filename != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JLexer* self = (lexer);
   JTokens* tokens = NULL;
   gint fd, e;
 
-  if ((fd = open (filename, O_RDONLY)) < 0)
+  GIOChannel* channel = NULL;
+  GError* tmperr = NULL;
+
+  if ((channel = g_io_channel_new_file (filename, "r", &tmperr)), G_UNLIKELY (tmperr != NULL))
     {
-      g_set_error
-      (error,
-       G_IO_CHANNEL_ERROR, G_IO_CHANNEL_ERROR_FAILED,
-       "Can not open file %s", filename);
+      g_propagate_error (error, tmperr);
       return NULL;
     }
-
-  GIOChannel* channel = j_fd_channel_new (fd);
 return (tokens = j_lexer_scan_from_channel (self, channel, error), close_channel (channel), tokens);
 }
 

@@ -18,7 +18,8 @@
 #ifndef __JASH_PARSER__
 #define __JASH_PARSER__ 1
 #include <glib-object.h>
-#include <token.h>
+#include <lexer/token.h>
+#include <parser/ast.h>
 
 #define J_TYPE_PARSER (j_parser_get_type ())
 #define J_PARSER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), J_TYPE_PARSER, JParser))
@@ -44,7 +45,7 @@ extern "C" {
   G_GNUC_INTERNAL GQuark j_parser_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GType j_parser_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JParser* j_parser_new ();
-  G_GNUC_INTERNAL GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error);
+  G_GNUC_INTERNAL JAst* j_parser_parse (JParser* parser, JTokens* tokens, GError** error);
 
 #if __cplusplus
 }

@@ -16,7 +16,8 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <token.h>
+#include <lexer/token.h>
+#include <lexer/private.h>
 
 #define _g_free0(var) ((var == NULL) ? NULL : (var = (g_free (var), NULL)))
 
@@ -62,13 +63,12 @@ _DEFINE_INTERN_FULL (operator, redirection_write, >);
 _DEFINE_INTERN_FULL (separator, chain, ;);
 _DEFINE_INTERN_FULL (separator, newline, \n);
 
-static const JToken __null = J_TOKEN_INIT;
-
-JTokens* j_tokens_new ()
+JTokens* _j_tokens_new ()
 {
   JTokens* self;
 
   self = g_slice_new (JTokens);
+  self->ref_count = 1;
   self->chunk = (gpointer) g_string_chunk_new (64);
   self->array = (gpointer) g_array_new (0, 0, sizeof (JToken));
 return (self);
@@ -94,21 +94,16 @@ void j_tokens_unref (JTokens* tokens)
     }
 }
 
-void j_tokens_add (JTokens* tokens, JTokenType type, guint line, guint column, const gchar* value, gssize len)
+guint j_tokens_get_count (JTokens* tokens)
 {
-  g_return_if_fail (tokens != NULL);
-  g_return_if_fail (J_TOKEN_LOCATION_BITS >= g_bit_storage (line));
-  g_return_if_fail (J_TOKEN_LOCATION_BITS >= g_bit_storage (column));
-  g_return_if_fail (value != NULL);
+  g_return_val_if_fail (tokens != NULL, 0);
   JTokens* self = (tokens);
+return (self->array->count);
+}
 
-  JToken token =
-    {
-      .type = (JTokenType) type,
-      .line = (guint64) line,
-      .column = (guint64) column,
-      .value = g_string_chunk_insert_len (self->chunk, value, len),
-    };
-
-  g_array_append_val (&self->array->g_array, token);
+JToken* j_tokens_index (JTokens* tokens, guint index)
+{
+  g_return_val_if_fail (tokens != NULL, NULL);
+  JTokens* self = (tokens);
+return & g_array_index (&self->array->g_array, JToken, index);
 }

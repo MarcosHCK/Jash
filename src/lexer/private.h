@@ -1,4 +1,3 @@
-%{
 /* Copyright 2023 MarcosHCK
  * Copyright 2023 DavierSB
  * This file is part of JASH.
@@ -16,20 +15,35 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#include <config.h>
-#include <histcontrol.h>
-%}
+#ifndef __JASH_LEXER_PRIVATE__
+#define __JASH_LEXER_PRIVATE__ 1
+#include <lexer/token.h>
 
-%struct-type
-%define hash-function-name j_hist_control_index_hash
-%define lookup-function-name j_hist_control_index_lookup
-%compare-strncmp
-%omit-struct-type
+#if __cplusplus
+extern "C" {
+#endif // __cplusplus
 
-struct _JHistControlIndex {};
-%%
-erasedups, J_HIST_CONTROL_ERASE_DUPLICATED
-ignoreboth, J_HIST_CONTROL_IGNORE_DUPLICATED | J_HIST_CONTROL_IGNORE_FIRST_SPACE
-ignoredups, J_HIST_CONTROL_IGNORE_DUPLICATED
-ignorespace, J_HIST_CONTROL_IGNORE_FIRST_SPACE
-none, J_HIST_CONTROL_NONE
+  struct _JTokens
+  {
+    guint ref_count;
+    GStringChunk* chunk;
+
+    union
+    {
+      GArray g_array;
+
+      struct
+      {
+        JToken* elements;
+        guint count;
+      };
+    } *array;
+  };
+
+  G_GNUC_INTERNAL JTokens* _j_tokens_new ();
+
+#if __cplusplus
+}
+#endif // __cplusplus
+
+#endif // __JASH_LEXER_PRIVATE__

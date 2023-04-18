@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_DATA_CHANNEL__
-#define __JASH_DATA_CHANNEL__ 1
+#ifndef __JASH_LEXER_DATA_CHANNEL__
+#define __JASH_LEXER_DATA_CHANNEL__ 1
 #include <glib.h>
 
 #if __cplusplus
@@ -32,4 +32,4 @@ extern "C" {
 }
 #endif // __cplusplus
 
-#endif // __JASH_DATA_CHANNEL__
+#endif // __JASH_LEXER_DATA_CHANNEL__

@@ -18,30 +18,32 @@
 #ifndef __JASH_CODEGEN__
 #define __JASH_CODEGEN__ 1
 #include <glib-object.h>
+#include <parser/ast.h>
 
+#define J_TYPE_CODEGEN (j_codegen_get_type ())
+#define J_CODEGEN(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), J_TYPE_CODEGEN, JCodegen))
+#define J_IS_CODEGEN(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), J_TYPE_CODEGEN))
 typedef struct _JCodegen JCodegen;
+
+#define J_CODEGEN_ERROR (j_codegen_error_quark ())
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-  struct _JCodegen
+  typedef enum
   {
-    gpointer context;
-    gpointer* labels;
-    guint maxpc;
-    guint nextpc;
-    guint n_labels;
-  };
+    J_CODEGEN_ERROR_FAILED,
+    J_CODEGEN_ERROR_BLOCK_ALLOC,
+    J_CODEGEN_ERROR_BLOCK_PROTECT,
+    J_CODEGEN_ERROR_PROGRAM_ENCODE,
+    J_CODEGEN_ERROR_PROGRAM_LINK,
+  } JCodegenError;
 
-  #define J_CODEGEN_LABEL_MAIN (0)
-
-  G_GNUC_INTERNAL void j_codegen_init (JCodegen* codegen);
-  G_GNUC_INTERNAL void j_codegen_clear (JCodegen* codegen);
-  G_GNUC_INTERNAL void j_codegen_prologue (JCodegen* codegen);
-  G_GNUC_INTERNAL void j_codegen_epilogue (JCodegen* codegen);
-  G_GNUC_INTERNAL void j_codegen_generate (JCodegen* codegen, Ast ast);
-  G_GNUC_INTERNAL GClosure* j_codegen_emit (JCodegen* codegen);
+  G_GNUC_INTERNAL GQuark j_codegen_error_quark (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL GType j_codegen_get_type (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL JCodegen* j_codegen_new ();
+  G_GNUC_INTERNAL GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error);
 
 #if __cplusplus
 }

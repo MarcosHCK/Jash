@@ -96,6 +96,13 @@ AC_ARG_ENABLE(
     AC_DEFINE([DEVELOPER], [0], [Developer features disabled])
     AC_SUBST([DEVELOPER], [0])])
 
+AS_CASE([$host_os],
+  [mingw*], [AC_SUBST([DYNASM_PLATFORM], [win32])],
+  [msys*], [AC_SUBST([DYNASM_PLATFORM], [win32])],
+  [cygwin*], [AC_SUBST([DYNASM_PLATFORM], [linux])],
+  [linux*], [AC_SUBST([DYNASM_PLATFORM], [linux])],
+  [AC_MSG_FAILURE([Unknown platform])])
+
 AC_SUBST([PACKAGE_VERSION_MAJOR], [v_MAJOR])
 AC_DEFINE_UNQUOTED([PACKAGE_VERSION_MAJOR], [v_MAJOR], [Version mayor number])
 AC_SUBST([PACKAGE_VERSION_MINOR], [v_MINOR])

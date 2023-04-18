@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_TOKEN__
-#define __JASH_TOKEN__ 1
+#ifndef __JASH_LEXER_TOKEN__
+#define __JASH_LEXER_TOKEN__ 1
 #include <glib.h>
 
 typedef struct _JToken JToken;
@@ -66,23 +66,6 @@ extern "C" {
     const gchar* value;
   };
 
-  struct _JTokens
-  {
-    guint ref_count;
-    GStringChunk* chunk;
-
-    union
-    {
-      GArray g_array;
-
-      struct
-      {
-        JToken* elements;
-        guint count;
-      };
-    } *array;
-  };
-
   enum _JTokenType
   {
     J_TOKEN_TYPE_BUILTIN,
@@ -121,12 +104,13 @@ extern "C" {
   G_GNUC_INTERNAL const gchar* j_token_separator_chain_intern_string (void) G_GNUC_CONST;
   G_GNUC_INTERNAL const gchar* j_token_separator_newline_intern_string (void) G_GNUC_CONST;
 
-  G_GNUC_INTERNAL JTokens* j_tokens_new ();
   G_GNUC_INTERNAL JTokens* j_tokens_ref (JTokens* tokens);
   G_GNUC_INTERNAL void j_tokens_unref (JTokens* tokens);
+  G_GNUC_INTERNAL guint j_tokens_get_count (JTokens* tokens);
+  G_GNUC_INTERNAL JToken* j_tokens_index (JTokens* tokens, guint index);
 
 #if __cplusplus
 }
 #endif // __cplusplus
 
-#endif // __JASH_TOKEN__
+#endif // __JASH_LEXER_TOKEN__

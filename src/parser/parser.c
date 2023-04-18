@@ -16,26 +16,25 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <ast.h>
-#include <codegen.h>
-#include <parser.h>
-#include <walker.h>
+#include <parser/ast.h>
+#include <parser/parser.h>
+#include <parser/private.h>
+#include <parser/walker.h>
 
 #define J_PARSER_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_PARSER, JParserClass))
 #define J_IS_PARSER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_PARSER))
 #define J_PARSER_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_PARSER, JParserClass))
 typedef struct _JParserClass JParserClass;
-static GClosure* emit_closure (JCodegen* codegen, Ast ast, GError** error);
-static Ast walk_arguments (Walker* walker, GError** error);
-static Ast walk_command (Walker* walker, JToken* head, GError** error);
-static Ast walk_expansion (Walker* walker, JToken* head, GError** error);
-static Ast walk_expression (Walker* walker, JToken* head, GError** error);
-static Ast walk_ifclosure (Walker* walker, JToken* head, GError** error);
-static Ast walk_scope (Walker* walker, GError** error);
+static JAst* walk_arguments (JWalker* walker, GError** error);
+static JAst* walk_command (JWalker* walker, JToken* head, GError** error);
+static JAst* walk_expansion (JWalker* walker, JToken* head, GError** error);
+static JAst* walk_expression (JWalker* walker, JToken* head, GError** error);
+static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error);
+static JAst* walk_scope (JWalker* walker, GError** error);
 #define _g_array_unref0(var) ((var == NULL) ? NULL : (var = (g_array_unref (var), NULL)))
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
-#define _g_node_destroy0(var) ((var == NULL) ? NULL : (var = (g_node_destroy (var), NULL)))
 #define _g_ptr_array_unref0(var) ((var == NULL) ? NULL : (var = (g_ptr_array_unref (var), NULL)))
+#define _j_ast_free0(var) ((var == NULL) ? NULL : (var = (j_ast_free (var), NULL)))
 #define _j_parser_unref0(var) ((var == NULL) ? NULL : (var = (j_parser_unref (var), NULL)))
 
 struct _JParser
@@ -59,41 +58,36 @@ JParser* j_parser_new ()
   return g_object_new (J_TYPE_PARSER, NULL);
 }
 
-GClosure* j_parser_parse (JParser* parser, JTokens* tokens, GError** error)
+JAst* j_parser_parse (JParser* parser, JTokens* tokens, GError** error)
 {
-  g_return_val_if_fail (parser != NULL, NULL);
+  g_return_val_if_fail (J_IS_PARSER (parser), NULL);
   g_return_val_if_fail (tokens != NULL, NULL);
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JParser* self = (parser);
   GError* tmperr = NULL;
 
-  Walker walker = WALKER_INIT;
+  guint n_tokens = j_tokens_get_count (tokens);
+  JToken* tokens_ = j_tokens_index (tokens, 0);
+
+  JWalker walker = J_WALKER_INIT;
   GClosure* closure = NULL;
-  Ast ast = NULL;
+  JAst* ast = NULL;
   guint i;
 
-  for (i = 0; i < tokens->array->count; ++i)
-    {
-      JToken* token = &tokens->array->elements [i];
+  for (i = 0; i < n_tokens; ++i)
+  if (tokens_ [i].type != J_TOKEN_TYPE_COMMENT)
+    j_walker_emplace (&walker, &tokens_ [i]);
 
-      if (token->type != J_TOKEN_TYPE_COMMENT)
-        walker_emplace (&walker, token);
-    }
+  j_walker_adjust (&walker, (({ g_assert_not_reached (); }), NULL));
 
-  walker_adjust (&walker, (({ g_assert_not_reached (); }), NULL));
-
-  if ((ast = walk_scope (&walker, &tmperr), walker_clear (&walker)), G_UNLIKELY ((tmperr != NULL)))
-    g_propagate_error (error, tmperr);
+  if ((ast = walk_scope (&walker, &tmperr), j_walker_clear (&walker)), G_LIKELY ((tmperr == NULL)))
+    j_ast_dump (ast);
   else
     {
-      JCodegen codegen;
-
-      if ((closure = emit_closure (&codegen, ast, &tmperr), ast_free (ast)) != NULL)
-        g_propagate_error (error, tmperr);
-      else
-        return closure;
+      g_propagate_error (error, tmperr);
+      _j_ast_free0 (ast);
     }
-return NULL;
+return ast;
 }
 
 #if DEVELOPER
@@ -108,21 +102,10 @@ return NULL;
 #define RETHROW(tmperr) ({ GError* __tmperr = ((tmperr)); g_propagate_error (error, __tmperr); })
 #define RETHROWP(tmperr,token) ({ GError* __tmperr = ((tmperr)); JToken* __token = ((token)); g_propagate_prefixed_error (error, __tmperr, "%d: %d: ", locate (__token)); })
 
-#define THROW_EOS() THROW (J_PARSER_ERROR_UNEXPECTED_EOF, "%i: %i: Unexpected end of scope", locate (walker_last (walker)))
+#define THROW_EOS() THROW (J_PARSER_ERROR_UNEXPECTED_EOF, "%i: %i: Unexpected end of scope", locate (j_walker_last (walker)))
 #define THROW_UNEXPECTED(token) ({ JToken* __token = ((token)); THROW (J_PARSER_ERROR_UNEXPECTED_TOKEN, "%i: %i: Unexpected token '%s'", locate (__token), __token->value); })
 
-static GClosure* emit_closure (JCodegen* codegen, Ast ast, GError** error)
-{ dumpast (ast);
-  GClosure* closure = NULL;
-
-  j_codegen_init (codegen);
-  j_codegen_prologue (codegen);
-  j_codegen_generate (codegen, ast);
-  j_codegen_epilogue (codegen);
-return (closure = j_codegen_emit (codegen), j_codegen_clear (codegen), closure);
-}
-
-static void collect (Walker* src, Walker* dst, GError** error, gint type, ...)
+static void collect (JWalker* src, JWalker* dst, GError** error, gint type, ...)
 {
   struct _Until
     {
@@ -155,9 +138,9 @@ static void collect (Walker* src, Walker* dst, GError** error, gint type, ...)
   GList* link = NULL;
   va_end (list);
 
-  while ((link = walker_take_link (src)) != NULL)
+  while ((link = j_walker_take_link (src)) != NULL)
     {
-      walker_emplace_link (dst, link);
+      j_walker_emplace_link (dst, link);
 
       for (i = 0; i < n_untils; ++i)
       {
@@ -168,39 +151,39 @@ static void collect (Walker* src, Walker* dst, GError** error, gint type, ...)
           return;
       }
     }
-  EXCPT (({ Walker* walker = src; THROW_EOS (); }),);
+  EXCPT (({ JWalker* walker = src; THROW_EOS (); }),);
 }
 
-static guint claim_arguments (Ast ast, gint min_arguments, gint max_arguments, GError** error)
+static guint claim_arguments (JAst* ast, gint min_arguments, gint max_arguments, GError** error)
 {
   guint n_arguments = 0;
-  Ast arguments;
-  Ast child;
+  JAst* arguments;
+  JAst* child;
 
-  if ((arguments = ast_find_child (ast, AST_ARGUMENTS)) == NULL)
+  if ((arguments = j_ast_find_child (ast, J_AST_TYPE_ARGUMENTS)) == NULL)
     g_error ("(" G_STRLOC "): Fix this!");
 
-  child = ast_first (arguments);
+  child = j_ast_get_first_child (arguments);
 
   while (child != NULL)
     {
-      switch (ast_type (child))
+      switch (j_ast_get_type (child))
       {
         default:
           {
             ++n_arguments;
-            child = ast_next (child);
+            child = j_ast_get_next_sibling (child);
             break;
           }
 
-        case AST_REDIRECT_INPUT:
-        case AST_REDIRECT_OUTPUT_APPEND:
-        case AST_REDIRECT_OUTPUT_REPLACE:
+        case J_AST_TYPE_REDIRECT_INPUT:
+        case J_AST_TYPE_REDIRECT_OUTPUT_APPEND:
+        case J_AST_TYPE_REDIRECT_OUTPUT_REPLACE:
           {
-            Ast next = ast_next (child);
+            JAst* next = j_ast_get_next_sibling (child);
 
-            ast_unlink (child);
-            ast_append (ast, child);
+            j_ast_unlink (child);
+            j_ast_append (ast, child);
             child = next;
             break;
           }
@@ -215,15 +198,15 @@ static guint claim_arguments (Ast ast, gint min_arguments, gint max_arguments, G
 return (n_arguments);
 }
 
-static Ast walk_arguments (Walker* walker, GError** error)
-{ dumpwalker (walker);
+static JAst* walk_arguments (JWalker* walker, GError** error)
+{ j_walker_dump (walker);
   GError* tmperr = NULL;
   JToken* redirect = NULL;
   JToken* token = NULL;
 
-  Ast ast = ast_node (AST_ARGUMENTS);
+  JAst* ast = j_ast_new (J_AST_TYPE_ARGUMENTS);
 
-  while ((token = walker_take (walker)) != NULL)
+  while ((token = j_walker_take (walker)) != NULL)
     {
       const guint type = token->type;
       const gchar* value = token->value;
@@ -236,15 +219,15 @@ static Ast walk_arguments (Walker* walker, GError** error)
         case J_TOKEN_TYPE_QUOTED:
           {
             if (redirect == NULL)
-              ast_append (ast, ast_data (value));
+              j_ast_append (ast, j_ast_new_data (value));
             else
               {
                 if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_APPEND)
-                  ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_APPEND, ast_data (value)));
+                  j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_REDIRECT_OUTPUT_APPEND, j_ast_new_data (value)));
                 else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_READ)
-                  ast_append (ast, ast_wrap (AST_REDIRECT_INPUT, ast_data (value)));
+                  j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_REDIRECT_INPUT, j_ast_new_data (value)));
                 else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_WRITE)
-                  ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_REPLACE, ast_data (value)));
+                  j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_REDIRECT_OUTPUT_REPLACE, j_ast_new_data (value)));
                   g_steal_pointer (&redirect);
               }
             break;
@@ -255,7 +238,7 @@ static Ast walk_arguments (Walker* walker, GError** error)
             if (value != J_TOKEN_OPERATOR_EXPANSION)
               {
                 if (redirect != NULL)
-                  EXCPT (THROW_UNEXPECTED (token), (ast_free (ast), NULL));
+                  EXCPT (THROW_UNEXPECTED (token), (_j_ast_free0 (ast), NULL));
                 else
                   {
                     gunichar c;
@@ -265,36 +248,36 @@ static Ast walk_arguments (Walker* walker, GError** error)
                       case (gunichar) '<':
                         redirect = token;
                         break;
-                      default: EXCPT (THROW_UNEXPECTED (token), (ast_free (ast), NULL));
+                      default: EXCPT (THROW_UNEXPECTED (token), (_j_ast_free0 (ast), NULL));
                     }
                   }
               }
             else
               {
-                Walker walker2 = WALKER_INIT;
-                Ast child = NULL;
+                JWalker walker2 = J_WALKER_INIT;
+                JAst* child = NULL;
 
                 if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1), G_UNLIKELY (tmperr != NULL))
-                  EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                  EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
                 else
                   {
-                    walker_withdraw (&walker2);
-                    walker_adjust (&walker2, token);
+                    j_walker_withdraw (&walker2);
+                    j_walker_adjust (&walker2, token);
 
-                    if ((child = walk_expansion (&walker2, token, &tmperr), walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-                      EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                    if ((child = walk_expansion (&walker2, token, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
+                      EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
                     else
                       {
                         if (redirect == NULL)
-                          ast_append (ast, child);
+                          j_ast_append (ast, child);
                         else
                           {
                             if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_APPEND)
-                              ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_APPEND, ast_data (value)));
+                              j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_REDIRECT_OUTPUT_APPEND, j_ast_new_data (value)));
                             else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_READ)
-                              ast_append (ast, ast_wrap (AST_REDIRECT_INPUT, ast_data (value)));
+                              j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_REDIRECT_INPUT, j_ast_new_data (value)));
                             else if (redirect->value == J_TOKEN_OPERATOR_REDIRECTION_WRITE)
-                              ast_append (ast, ast_wrap (AST_REDIRECT_OUTPUT_REPLACE, ast_data (value)));
+                              j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_REDIRECT_OUTPUT_REPLACE, j_ast_new_data (value)));
                               g_steal_pointer (&redirect);
                           }
                       }
@@ -303,18 +286,18 @@ static Ast walk_arguments (Walker* walker, GError** error)
             break;
           }
 
-        default: EXCPT (THROW_UNEXPECTED (token), (ast_free (ast), NULL));
+        default: EXCPT (THROW_UNEXPECTED (token), (_j_ast_free0 (ast), NULL));
       }
     }
 return (ast);
 }
 
-static Ast walk_command (Walker* walker, JToken* head, GError** error)
-{ dumpwalker (walker);
+static JAst* walk_command (JWalker* walker, JToken* head, GError** error)
+{ j_walker_dump (walker);
   GError* tmperr = NULL;
-  Ast child = NULL;
+  JAst* child = NULL;
 
-  Ast ast = ast_node (AST_INVOKE);
+  JAst* ast = j_ast_new (J_AST_TYPE_INVOKE);
 
   const guint type = head->type;
   const gchar* value = head->value;
@@ -333,11 +316,11 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
             || value == J_TOKEN_BUILTIN_UNSET)
             {
               if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
               else
                 {
-                  ast_append (ast, ast_wrap (AST_BUILTIN, ast_data (value)));
-                  ast_append (ast, child);
+                  j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_BUILTIN, j_ast_new_data (value)));
+                  j_ast_append (ast, child);
 
                   if (claim_arguments (ast, -1, 1, &tmperr), G_UNLIKELY (tmperr != NULL))
                     {
@@ -348,7 +331,7 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
                         g_propagate_prefixed_error (error, tmperr, "%d: %d: Too many arguments for '%s'", locate (head), value);
                       else
                         g_propagate_error (error, tmperr);
-                      return (ast_free (ast), NULL);
+                      return (_j_ast_free0 (ast), NULL);
                     }
                 }
             }
@@ -358,11 +341,11 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
             || value == J_TOKEN_BUILTIN_TRUE)
             {
               if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
               else
                 {
-                  ast_append (ast, ast_wrap (AST_BUILTIN, ast_data (value)));
-                  ast_append (ast, child);
+                  j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_BUILTIN, j_ast_new_data (value)));
+                  j_ast_append (ast, child);
 
                   if (claim_arguments (ast, -1, 0, &tmperr), G_UNLIKELY (tmperr != NULL))
                     {
@@ -373,7 +356,7 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
                         g_propagate_prefixed_error (error, tmperr, "%d: %d: Too many arguments for '%s'", locate (head), value);
                       else
                         g_propagate_error (error, tmperr);
-                      return (ast_free (ast), NULL);
+                      return (_j_ast_free0 (ast), NULL);
                     }
                 }
             }
@@ -381,12 +364,12 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
           if (value == J_TOKEN_BUILTIN_SET)
             {
               if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
               else
                 {
                   guint n_arguments;
-                  ast_append (ast, ast_wrap (AST_BUILTIN, ast_data (value)));
-                  ast_append (ast, child);
+                  j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_BUILTIN, j_ast_new_data (value)));
+                  j_ast_append (ast, child);
 
                   if ((n_arguments = claim_arguments (ast, -1, 2, &tmperr), G_LIKELY (tmperr == NULL)))
                     {
@@ -402,7 +385,7 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
                         g_propagate_prefixed_error (error, tmperr, "%d: %d: Too many arguments for '%s'", locate (head), value);
                       else
                         g_propagate_error (error, tmperr);
-                      return (ast_free (ast), NULL);
+                      return (_j_ast_free0 (ast), NULL);
                     }
                 }
             }
@@ -412,11 +395,11 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
       case J_TOKEN_TYPE_LITERAL:
         {
           if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-            EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+            EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
           else
             {
-              ast_append (ast, ast_wrap (AST_TARGET, ast_data (value)));
-              ast_append (ast, child);
+              j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_TARGET, j_ast_new_data (value)));
+              j_ast_append (ast, child);
 
               if (claim_arguments (ast, -1, -1, &tmperr), G_UNLIKELY (tmperr != NULL))
                 g_error ("(" G_STRLOC "): Fix this!");
@@ -429,24 +412,24 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
   #if DEVELOPER == 1
           g_assert (value == J_TOKEN_OPERATOR_EXPANSION);
   #endif // DEVELOPER
-          Walker walker2 = WALKER_INIT;
-          Ast target = NULL;
+          JWalker walker2 = J_WALKER_INIT;
+          JAst* target = NULL;
 
-          walker_leave (walker, head);
+          j_walker_leave (walker, head);
 
           if ((child = walk_arguments (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-            EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+            EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
           else
             {
-              target = ast_first (child);
+              target = j_ast_get_first_child (child);
 
   #if DEVELOPER == 1
-              g_assert (ast_first (child)->data == GINT_TO_POINTER (AST_EXPANSION));
+              g_assert (j_ast_get_type (target) == J_AST_TYPE_EXPANSION);
   #endif // DEVELOPER
 
-              ast_unlink (target);
-              ast_append (ast, ast_wrap (AST_TARGET, target));
-              ast_append (ast, child);
+              j_ast_unlink (target);
+              j_ast_append (ast, j_ast_new_wrap (J_AST_TYPE_TARGET, target));
+              j_ast_append (ast, child);
 
               if (claim_arguments (ast, -1, -1, &tmperr), G_UNLIKELY (tmperr != NULL))
                 g_error ("(" G_STRLOC "): Fix this!");
@@ -454,32 +437,30 @@ static Ast walk_command (Walker* walker, JToken* head, GError** error)
           break;
         }
 
-      default: EXCPT (THROW_UNEXPECTED (head), (ast_free (ast), NULL));
+      default: EXCPT (THROW_UNEXPECTED (head), (_j_ast_free0 (ast), NULL));
     }
 return ast;
 }
 
-static Ast walk_expansion (Walker* walker, JToken* head, GError** error)
-{ dumpwalker (walker);
+static JAst* walk_expansion (JWalker* walker, JToken* head, GError** error)
+{ j_walker_dump (walker);
   GError* tmperr = NULL;
-  Ast ast = NULL;
+  JAst* ast = NULL;
 
   if ((ast = walk_scope (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
     EXCPT (RETHROW (tmperr), NULL);
   else
-    {
-      ast->data = GINT_TO_POINTER (AST_EXPANSION);
-    }
+    ast->data = GUINT_TO_POINTER (J_AST_TYPE_EXPANSION);
 return ast;
 }
 
-static Ast walk_expression (Walker* walker, JToken* head, GError** error)
-{ dumpwalker (walker);
+static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
+{ j_walker_dump (walker);
   GError* tmperr = NULL;
   JToken* token = NULL;
 
-  Ast ast = NULL;
-  Ast command = NULL;
+  JAst* ast = NULL;
+  JAst* command = NULL;
 
 #define SEPARATORS \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_DETACH, \
@@ -492,7 +473,7 @@ static Ast walk_expression (Walker* walker, JToken* head, GError** error)
 
   do
     {
-      Walker walker2 = WALKER_INIT;
+      JWalker walker2 = J_WALKER_INIT;
       JToken* oper = NULL;
 
       while (TRUE)
@@ -502,12 +483,12 @@ static Ast walk_expression (Walker* walker, JToken* head, GError** error)
               if (G_LIKELY (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF)))
                 _g_error_free0 (tmperr);
               else
-                EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+                EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
             }
           else
             {
-              if ((oper = walker_peek_back (&walker2))->value != J_TOKEN_OPERATOR_EXPANSION)
-                walker_withdraw (&walker2);
+              if ((oper = j_walker_peek_back (&walker2))->value != J_TOKEN_OPERATOR_EXPANSION)
+                j_walker_withdraw (&walker2);
               else
               {
                 if (head->value == J_TOKEN_OPERATOR_EXPANSION)
@@ -515,7 +496,7 @@ static Ast walk_expression (Walker* walker, JToken* head, GError** error)
                 else
                 {
                   if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1), G_UNLIKELY (tmperr != NULL))
-                    EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+                    EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
                   else continue;
                 }
               }
@@ -526,13 +507,13 @@ static Ast walk_expression (Walker* walker, JToken* head, GError** error)
 
       G_STMT_START
         {
-          walker_adjust (&walker2, token);
+          j_walker_adjust (&walker2, token);
 
-          if ((command = walk_command (&walker2, token, &tmperr), walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-            EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+          if ((command = walk_command (&walker2, token, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
+            EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
           else
             {
-              ast = (ast == NULL) ? command : (ast_append (ast, command), ast);
+              ast = (ast == NULL) ? command : (j_ast_append (ast, command), ast);
 
               if (oper != NULL)
               {
@@ -541,74 +522,74 @@ static Ast walk_expression (Walker* walker, JToken* head, GError** error)
 
                 if (value == J_TOKEN_OPERATOR_DETACH)
                   {
-                    if (walker_length (walker) > 0)
-                      EXCPT (THROW_UNEXPECTED (oper), (ast_free (ast), NULL));
+                    if (j_walker_length (walker) > 0)
+                      EXCPT (THROW_UNEXPECTED (oper), (_j_ast_free0 (ast), NULL));
                     else
-                      ast = ast_wrap (AST_DETACH, ast);
+                      ast = j_ast_new_wrap (J_AST_TYPE_DETACH, ast);
                   }
                 else if (value == J_TOKEN_OPERATOR_LOGICAL_AND)
-                  ast = ast_wrap (AST_LOGICAL_AND, ast);
+                  ast = j_ast_new_wrap (J_AST_TYPE_LOGICAL_AND, ast);
                 else if (value == J_TOKEN_OPERATOR_LOGICAL_OR)
-                  ast = ast_wrap (AST_LOGICAL_OR, ast);
+                  ast = j_ast_new_wrap (J_AST_TYPE_LOGICAL_OR, ast);
                 else if (value == J_TOKEN_OPERATOR_PIPE)
-                  ast = ast_wrap (AST_PIPE, ast);
+                  ast = j_ast_new_wrap (J_AST_TYPE_PIPE, ast);
               }
             }
         }
       G_STMT_END;
     }
 #undef SEPARATORS
-  while ((token = walker_take (walker)) != NULL);
+  while ((token = j_walker_take (walker)) != NULL);
 return ast;
 }
 
-static Ast walk_ifclosure (Walker* walker, JToken* head, GError** error)
-{ dumpwalker (walker);
-  Walker walker2 = WALKER_INIT;
+static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error)
+{ j_walker_dump (walker);
+  JWalker walker2 = J_WALKER_INIT;
   JToken* then = NULL;
   GError* tmperr = NULL;
 
-  Ast ast = ast_node (AST_IFCLOSURE);
-  Ast child = NULL;
+  JAst* ast = j_ast_new (J_AST_TYPE_IFCLOSURE);
+  JAst* child = NULL;
 
   gboolean reverse = FALSE;
   guint ifcount = 1;
 
   if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_THEN, -1), G_UNLIKELY (tmperr != NULL))
-    EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+    EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
   else
     {
-      then = walker_peek_back (&walker2);
+      then = j_walker_peek_back (&walker2);
 
-      walker_withdraw (&walker2);
-      walker_adjust (&walker2, head);
+      j_walker_withdraw (&walker2);
+      j_walker_adjust (&walker2, head);
 
-      if (walker_peek_front (&walker2)->value == J_TOKEN_KEYWORD_IF)
-        EXCPT (THROW_UNEXPECTED (walker_peek_front (&walker2)), (walker_clear (&walker2), ast_free (ast), NULL));
+      if (j_walker_peek_front (&walker2)->value == J_TOKEN_KEYWORD_IF)
+        EXCPT (THROW_UNEXPECTED (j_walker_peek_front (&walker2)), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
       else
-      if ((child = walk_scope (&walker2, &tmperr), walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-        EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+      if ((child = walk_scope (&walker2, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
+        EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
       else
         {
-          ast_append (ast, ast_retype (AST_IFCLOSURE_CONDITION, child));
+          j_ast_append (ast, (child->data = GUINT_TO_POINTER (J_AST_TYPE_IFCLOSURE_CONDITION), child));
 
           while (TRUE)
             {
               if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_ELSE, -1), G_UNLIKELY (tmperr != NULL))
                 {
                   if (G_UNLIKELY (!g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF)))
-                    EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+                    EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
                   else
                     {
                       if (ifcount > 1)
-                        EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+                        EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
                       else
                         _g_error_free0 (tmperr);
                     }
                 }
               else
                 {
-                  const gchar* value2 = walker_peek_back (&walker2)->value;
+                  const gchar* value2 = j_walker_peek_back (&walker2)->value;
 
                   if (value2 == J_TOKEN_KEYWORD_IF)
                     {
@@ -627,28 +608,28 @@ static Ast walk_ifclosure (Walker* walker, JToken* head, GError** error)
 
           G_STMT_START
             {
-              if (walker_peek_back (&walker2)->value == J_TOKEN_KEYWORD_ELSE)
+              if (j_walker_peek_back (&walker2)->value == J_TOKEN_KEYWORD_ELSE)
                 {
-                  walker_withdraw (&walker2);
+                  j_walker_withdraw (&walker2);
                   reverse = TRUE;
                 }
 
-              walker_adjust (&walker2, then);
+              j_walker_adjust (&walker2, then);
 
-              if ((child = walk_scope (&walker2, &tmperr), walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-                EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+              if ((child = walk_scope (&walker2, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
+                EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
               else
                 {
-                  ast_append (ast, ast_retype (AST_IFCLOSURE_DIRECT, child));
+                  j_ast_append (ast, (child->data = GUINT_TO_POINTER (J_AST_TYPE_IFCLOSURE_DIRECT), child));
 
-                  if (reverse == FALSE && walker_length (walker) > 0)
-                    EXCPT (THROW_UNEXPECTED (walker_take (walker)), (ast_free (ast), NULL));
+                  if (reverse == FALSE && j_walker_length (walker) > 0)
+                    EXCPT (THROW_UNEXPECTED (j_walker_take (walker)), (_j_ast_free0 (ast), NULL));
                   else if (reverse == TRUE)
                     {
                       if ((child = walk_scope (walker, &tmperr)), G_UNLIKELY (tmperr != NULL))
-                        EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                        EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
                       else
-                        ast_append (ast, ast_retype (AST_IFCLOSURE_REVERSE, child));
+                        j_ast_append (ast, (child->data = GUINT_TO_POINTER (J_AST_TYPE_IFCLOSURE_REVERSE), child));
                     }
                 }
             }
@@ -658,14 +639,14 @@ static Ast walk_ifclosure (Walker* walker, JToken* head, GError** error)
 return ast;
 }
 
-static Ast walk_scope (Walker* walker, GError** error)
-{ dumpwalker (walker);
+static JAst* walk_scope (JWalker* walker, GError** error)
+{ j_walker_dump (walker);
   GError* tmperr = NULL;
   JToken* token = NULL;
 
-  Ast ast = ast_node (AST_SCOPE);
+  JAst* ast = j_ast_new (J_AST_TYPE_SCOPE);
 
-  while ((token = walker_take (walker)) != NULL)
+  while ((token = j_walker_take (walker)) != NULL)
     {
       const guint type = token->type;
       const gchar* value = token->value;
@@ -675,32 +656,32 @@ static Ast walk_scope (Walker* walker, GError** error)
         case J_TOKEN_TYPE_OPERATOR:
           {
             if (value != J_TOKEN_OPERATOR_EXPANSION)
-              EXCPT (THROW_UNEXPECTED (token), (ast_free (ast), NULL));
+              EXCPT (THROW_UNEXPECTED (token), (_j_ast_free0 (ast), NULL));
             G_GNUC_FALLTHROUGH;
           }
         case J_TOKEN_TYPE_BUILTIN:
         case J_TOKEN_TYPE_LITERAL:
           {
-            Walker walker2 = WALKER_INIT;
-            Ast expression = NULL;
+            JWalker walker2 = J_WALKER_INIT;
+            JAst* expression = NULL;
 
             if ((collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_SEPARATOR, NULL, -1)), G_LIKELY (tmperr == NULL))
-              walker_withdraw (&walker2);
+              j_walker_withdraw (&walker2);
             else
               {
                 if (G_LIKELY (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF)))
                   _g_error_free0 (tmperr);
                 else
-                  EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                  EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
               }
             G_STMT_START
               {
-                walker_adjust (&walker2, token);
+                j_walker_adjust (&walker2, token);
 
-                if ((expression = walk_expression (&walker2, token, &tmperr), walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-                  EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                if ((expression = walk_expression (&walker2, token, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
+                  EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
                 else
-                  ast_append (ast, expression);
+                  j_ast_append (ast, expression);
               }
             G_STMT_END;
             break;
@@ -709,20 +690,20 @@ static Ast walk_scope (Walker* walker, GError** error)
         case J_TOKEN_TYPE_KEYWORD:
           {
             if (value != J_TOKEN_KEYWORD_IF)
-              EXCPT (THROW_UNEXPECTED (token), (ast_free (ast), NULL));
+              EXCPT (THROW_UNEXPECTED (token), (_j_ast_free0 (ast), NULL));
             else
               {
-                Walker walker2 = WALKER_INIT;
-                Ast closure = NULL;
+                JWalker walker2 = J_WALKER_INIT;
+                JAst* child = NULL;
                 guint ifcount = 1;
 
                 while (TRUE)
                   {
                     if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_END, -1), G_UNLIKELY (tmperr != NULL))
-                      EXCPT (RETHROW (tmperr), (walker_clear (&walker2), ast_free (ast), NULL));
+                      EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
                     else
                       {
-                        const gchar* value2 = walker_peek_back (&walker2)->value;
+                        const gchar* value2 = j_walker_peek_back (&walker2)->value;
 
                         if (value2 == J_TOKEN_KEYWORD_IF)
                           {
@@ -741,13 +722,13 @@ static Ast walk_scope (Walker* walker, GError** error)
 
                 G_STMT_START
                   {
-                    walker_withdraw (&walker2);
-                    walker_adjust (&walker2, token);
+                    j_walker_withdraw (&walker2);
+                    j_walker_adjust (&walker2, token);
 
-                    if ((closure = walk_ifclosure (&walker2, token, &tmperr), walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-                      EXCPT (RETHROW (tmperr), (ast_free (ast), NULL));
+                    if ((child = walk_ifclosure (&walker2, token, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
+                      EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
                     else
-                      ast_append (ast, closure);
+                      j_ast_append (ast, child);
                   }
                 G_STMT_END;
               }
@@ -757,7 +738,7 @@ static Ast walk_scope (Walker* walker, GError** error)
         case J_TOKEN_TYPE_SEPARATOR:
           break;
 
-        default: EXCPT (THROW_UNEXPECTED (token), (ast_free (ast), NULL));
+        default: EXCPT (THROW_UNEXPECTED (token), (_j_ast_free0 (ast), NULL));
       }
     }
 return ast;

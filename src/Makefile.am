@@ -24,24 +24,31 @@ VOID=
 #
 
 bin_PROGRAMS=jash
-noinst_LTLIBRARIES=libcodegen.la
+
+noinst_LTLIBRARIES=\
+	codegen/liba.la \
+	lexer/liba.la \
+	parser/liba.la \
+	term/liba.la \
+	$(VOID)
 
 noinst_HEADERS=\
-	ast.h \
-	codegen.h \
-	codegen_common.h \
-	datachannel.h \
-	fdchannel.h \
-	histcontrol.h \
-	lexer.h \
-	parser.h \
-	readline.h \
-	token.h \
-	walker.h \
+	codegen/block.h \
+	codegen/codegen.h \
+	codegen/context.h \
+	codegen/walker.h \
+  lexer/datachannel.h \
+  lexer/lexer.h \
+  lexer/token.h \
+  parser/ast.h \
+  parser/parser.h \
+  parser/walker.h \
+  term/histcontrol.h \
+  term/readline.h \
 	$(VOID)
 
 noinst_DATA=\
-	codegen_x86_64.c \
+	codegen/backend/x86_64.dasc.c \
 	$(VOID)
 
 #
@@ -50,14 +57,7 @@ noinst_DATA=\
 #
 
 jash_SOURCES=\
-	datachannel.c \
-	fdchannel.c \
-	histcontrol.c \
-	jash.c \
-	lexer.c \
-	parser.c \
-	readline.c \
-	token.c \
+  jash.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \
@@ -74,26 +74,81 @@ jash_LDADD=\
 	$(GLIB_LIBS) \
 	$(GOBJECT_LIBS) \
 	$(READLINE_LIBS) \
-	libcodegen.la \
+	codegen/liba.la \
+	lexer/liba.la \
+	parser/liba.la \
+	term/liba.la \
 	$(VOID)
 
-libcodegen_la_SOURCES=\
-	codegen_closure.c \
-	codegen_common.c \
-	codegen_externs.c \
-	codegen_${host_cpu}.c \
+codegen_liba_la_SOURCES=\
+	codegen/backend/${target_cpu}.c \
+	codegen/block.c \
+	codegen/codegen.c \
+	codegen/extern.c \
+	codegen/generate.c \
 	$(VOID)
-libcodegen_la_CFLAGS=\
+codegen_liba_la_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash.Codegen\" \
 	-DG_LOG_USE_STRUCTURED=1 \
-	-D__CODEGEN__ \
+	-flto \
+	-D__CODEGEN__=1 \
+	$(GLIB_CFLAGS) \
+	$(VOID)
+codegen_liba_la_LDFLAGS=\
+	-flto \
+	$(VOID)
+codegen_liba_la_LIBADD=\
+	$(GLIB_LIBS) \
+	$(VOID)
+
+lexer_liba_la_SOURCES=\
+	lexer/datachannel.c \
+  lexer/lexer.c \
+  lexer/token.c \
+	$(VOID)
+lexer_liba_la_CFLAGS=\
+	-DG_LOG_DOMAIN=\"Jash.Lexer\" \
+	-DG_LOG_USE_STRUCTURED=1 \
 	-flto \
 	$(GLIB_CFLAGS) \
 	$(VOID)
-libcodegen_la_LDFLAGS=\
+lexer_liba_la_LDFLAGS=\
 	-flto \
 	$(VOID)
-libcodegen_la_LIBADD=\
+lexer_liba_la_LIBADD=\
+	$(GLIB_LIBS) \
+	$(VOID)
+
+parser_liba_la_SOURCES=\
+  parser/parser.c \
+	$(VOID)
+parser_liba_la_CFLAGS=\
+	-DG_LOG_DOMAIN=\"Jash.Parser\" \
+	-DG_LOG_USE_STRUCTURED=1 \
+	-flto \
+	$(GLIB_CFLAGS) \
+	$(VOID)
+parser_liba_la_LDFLAGS=\
+	-flto \
+	$(VOID)
+parser_liba_la_LIBADD=\
+	$(GLIB_LIBS) \
+	$(VOID)
+
+term_liba_la_SOURCES=\
+	term/histcontrol.c \
+	term/readline.c \
+	$(VOID)
+term_liba_la_CFLAGS=\
+	-DG_LOG_DOMAIN=\"Jash.Term\" \
+	-DG_LOG_USE_STRUCTURED=1 \
+	-flto \
+	$(GLIB_CFLAGS) \
+	$(VOID)
+term_liba_la_LDFLAGS=\
+	-flto \
+	$(VOID)
+term_liba_la_LIBADD=\
 	$(GLIB_LIBS) \
 	$(VOID)
 
@@ -103,7 +158,7 @@ libcodegen_la_LIBADD=\
 #
 
 SUFFIXES=.stringlist .dasc.c .c
-DYNASM_CFLAGS=-D DEBUG=\"${DEBUG}\" -D DEVELOPER=\"${DEVELOPER}\"
+DYNASM_CFLAGS=-D DEBUG=\"${DEBUG}\" -D DEVELOPER=\"${DEVELOPER}\" -D PLATFORM=\"${DYNASM_PLATFORM}\"
 
 .dasc.c.c:
 	$(DYNASM) $(DYNASM_CFLAGS) -o $@ $<

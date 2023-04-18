@@ -17,24 +17,33 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <codegen_common.h>
+#include <codegen/codegen.h>
+#include <codegen/context.h>
+#include <glib-object.h>
 #include <unistd.h>
+
+typedef struct _Closure Closure;
+G_LOCK_DEFINE_STATIC (lowtable);
+
+struct _Closure
+{
+  GClosure parent;
+  GCallback callback;
+  JBlock block;
+};
 %}
 
 %struct-type
-%define hash-function-name j_codegen_extern_hash
-%define lookup-function-name j_codegen_extern_lookup
+%define hash-function-name j_extern_hash
+%define lookup-function-name j_extern_lookup
 %compare-strncmp
 %omit-struct-type
 
-struct _JCodegenExtern {};
+struct _JExtern {};
 %%
-breakpoint, G_CALLBACK (j_codegen_extern_breakpoint)
 execvp, G_CALLBACK (execvp)
 fork, G_CALLBACK (fork)
 %%
-
-G_LOCK_DEFINE_STATIC (lowtable);
 
 static inline gboolean adjust (gint32* offset, gconstpointer address, gconstpointer callback, int type)
 {
@@ -64,52 +73,67 @@ static inline gboolean adjust (gint32* offset, gconstpointer address, gconstpoin
 return TRUE;
 }
 
-static inline gboolean lowget (gint32* offset, gconstpointer address, gconstpointer callback, int type)
+static inline gboolean lowget (gint32* offset, gconstpointer address, gpointer callback, int type)
 {
   static GHashTable* table = NULL;
   const GHashFunc func1 = (GHashFunc) g_direct_hash;
   const GEqualFunc func2 = (GEqualFunc) g_direct_equal;
   const GDestroyNotify notify = (GDestroyNotify) g_closure_unref;
 
-  JCodegenClosure* jc;
+  GClosure* gc = NULL;
+  Closure* jc = NULL;
+  int result = 0;
+  size_t sz = 0;
 
   G_LOCK (lowtable);
   table = (table) ? table : g_hash_table_new_full (func1, func2, NULL, notify);
 
   if ((jc = g_hash_table_lookup (table, callback)) == NULL)
     {
-      JCodegen codegen = {0};
-      gpointer key = NULL;
+      JContext context = {0};
 
-      j_codegen_init (&codegen);
-      j_codegen_absjump (&codegen, callback);
+      j_context_init (&context);
+      j_context_ljmp (&context, callback);
 
-      key = (gpointer) callback;
-      jc = (gpointer) j_codegen_emit (&codegen);
+      gc = g_closure_new_simple (sizeof (Closure), NULL);
+      jc = (Closure*) gc;
 
-      g_hash_table_insert (table, key, jc);
-      j_codegen_clear (&codegen);
+      if (G_LIKELY (gc->floating))
+        {
+          g_closure_ref (gc);
+          g_closure_sink (gc);
+        }
+
+      if ((result = dasm_link (&context, &sz)), G_UNLIKELY (result != 0))
+        g_error ("(" G_STRLOC "): dasm_link ()!");
+
+      j_block_init (&jc->block, sz);
+      g_closure_add_finalize_notifier (gc, &jc->block, (GClosureNotify) j_block_clear);
+
+      if ((result = dasm_encode (&context, j_block_ptr (&jc->block))), G_UNLIKELY (result != 0))
+        g_error ("(" G_STRLOC "): dasm_encode ()!");
+
+      jc->callback = G_CALLBACK (context.labels [J_CONTEXT_LABEL_MAIN]);
+
+      g_hash_table_insert (table, callback, gc);
+      j_block_protect (&jc->block);
+      j_context_clear (&context);
     }
 
   G_UNLOCK (lowtable);
-return adjust (offset, address, jc->entry, type);
+return adjust (offset, address, jc->callback, type);
 }
 
-gint32 j_codegen_extern_find (Dst_DECL, gconstpointer address, const gchar* name, int type)
+const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type)
 {
-  JCodegenExtern* extern_ = NULL;
+  JExtern* extern_ = NULL;
   gboolean good = FALSE;
   gint32 offset = 0;
 
-  if ((extern_ = (gpointer) j_codegen_extern_lookup (name, strlen (name))) == NULL)
+  if ((extern_ = (gpointer) j_extern_lookup (name, strlen (name))) == NULL)
     g_error ("(" G_STRLOC "): Unknown extern '%s'", name);
-  if ((good = (gboolean) adjust (&offset, address, extern_->callback, type)) == FALSE)
-  if ((good = (gboolean) lowget (&offset, address, extern_->callback, type)) == FALSE)
+  if ((good = (gboolean) adjust (&offset, address, extern_->address, type)) == FALSE)
+  if ((good = (gboolean) lowget (&offset, address, extern_->address, type)) == FALSE)
     g_error ("(" G_STRLOC "): Extern '%s' offset above 2 GB limit", name);
-return offset;
-}
-
-void j_codegen_extern_breakpoint ()
-{
-  G_BREAKPOINT ();
+return (offset);
 }

@@ -15,21 +15,32 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#include <config.h>
-#include <codegen_common.h>
+#ifndef __JASH_CODEGEN_BLOCK__
+#define __JASH_CODEGEN_BLOCK__ 1
+#include <glib.h>
 
-int j_codegen_allocpc (Dst_DECL)
-{
-  int nextpc = Dst->nextpc++;
-  if (nextpc == Dst->maxpc)
-    {
-      dasm_growpc (Dst, Dst->maxpc *= 2);
-    }
-return nextpc;
-}
+typedef struct _JBlock JBlock;
 
-void j_codegen_clear (Dst_DECL)
-{
-  dasm_free (Dst);
-  g_free (Dst->labels);
+#if __cplusplus
+extern "C" {
+#endif // __cplusplus
+
+  struct _JBlock
+  {
+    gpointer ptr;
+    gsize sz;
+  };
+
+  #define J_BLOCK_INIT { NULL, 0, }
+  #define j_block_ptr(block) (({ JBlock* __block = ((block)); __block->ptr; }))
+  #define j_block_sz(block) (({ JBlock* __block = ((block)); __block->sz; }))
+
+  G_GNUC_INTERNAL void j_block_clear (JBlock* block);
+  G_GNUC_INTERNAL void j_block_init (JBlock* block, gsize sz);
+  G_GNUC_INTERNAL void j_block_protect (JBlock* block);
+
+#if __cplusplus
 }
+#endif // __cplusplus
+
+#endif // __JASH_CODEGEN_BLOCK__

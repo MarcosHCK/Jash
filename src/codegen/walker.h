@@ -15,19 +15,26 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_FD_CHANNEL__
-#define __JASH_FD_CHANNEL__ 1
+#ifndef __JASH_CODEGEN_WALKER__
+#define __JASH_CODEGEN_WALKER__ 1
 #include <glib.h>
+
+typedef struct _JWalker JWalker;
 
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
 
-  G_GNUC_INTERNAL GIOChannel* j_fd_channel_new (gint fd);
-  G_GNUC_INTERNAL gint j_fd_channel_get_fd (GIOChannel* channel);
+  struct _JWalker
+  {
+    GQueue expansions;
+    GQueue invocations;
+  };
+
+  #define J_WALKER_INIT { G_QUEUE_INIT, G_QUEUE_INIT, }
 
 #if __cplusplus
 }
 #endif // __cplusplus
 
-#endif // __JASH_FD_CHANNEL__
+#endif // __JASH_CODEGEN_WALKER__

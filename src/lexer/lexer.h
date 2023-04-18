@@ -18,7 +18,7 @@
 #ifndef __JASH_LEXER__
 #define __JASH_LEXER__ 1
 #include <glib-object.h>
-#include <token.h>
+#include <lexer/token.h>
 
 #define J_TYPE_LEXER (j_lexer_get_type ())
 #define J_LEXER(obj) (G_TYPE_CHECK_INSTANCE_CAST ((obj), J_TYPE_LEXER, JLexer))
