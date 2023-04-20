@@ -23,6 +23,7 @@
 typedef struct _JContext JContext;
 typedef struct _JClosure JClosure;
 typedef struct _JExtern JExtern;
+typedef struct _JWalker JWalker;
 
 #define Dst_DECL JContext* Dst
 #define Dst_REF (Dst->state)
@@ -59,10 +60,15 @@ extern "C"
   struct _JContext
   {
     dasm_State* state;
+
     gpointer* labels;
+    guint n_labels;
+  
     guint maxpc;
     guint nextpc;
-    guint n_labels;
+
+    JCodegen* codegen;
+    GHashTable* strtab;
   };
 
   struct _JClosure
@@ -79,15 +85,29 @@ extern "C"
   };
 
   G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
-  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gpointer buffer, gsize bufsz);
+  G_GNUC_INTERNAL void j_context_emit (Dst_DECL, JWalker* walker);
   G_GNUC_INTERNAL void j_context_epilog (Dst_DECL);
   G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast);
-  G_GNUC_INTERNAL void j_context_init (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_init (Dst_DECL, JCodegen* codegen);
   G_GNUC_INTERNAL void j_context_ljmp (Dst_DECL, gpointer address);
   G_GNUC_INTERNAL void j_context_prolog (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gpointer buffer, gsize bufsz);
 
   G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
   G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
+
+  #define j_context_allocpc(context) \
+    (({ \
+        JContext* __context = ((context)); \
+        guint __nextpc = __context->nextpc++; \
+ ; \
+        if (__nextpc == __context->maxpc) \
+          { \
+            dasm_growpc (__context, __context->maxpc *= 2); \
+          } \
+ ; \
+        __nextpc; \
+      }))
 
 #if __cplusplus
 }

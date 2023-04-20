@@ -43,9 +43,10 @@ struct _JExtern {};
 %%
 execvp, G_CALLBACK (execvp)
 fork, G_CALLBACK (fork)
+pipe, G_CALLBACK (pipe)
 %%
 
-static inline gboolean adjust (gint32* offset, gconstpointer address, gconstpointer callback, int type)
+static inline gboolean adjust (Dst_DECL, gint32* offset, gconstpointer address, gconstpointer callback, int type)
 {
   gsize address_ = GPOINTER_TO_SIZE (address);
   gsize callback_ = GPOINTER_TO_SIZE (callback);
@@ -73,7 +74,7 @@ static inline gboolean adjust (gint32* offset, gconstpointer address, gconstpoin
 return TRUE;
 }
 
-static inline gboolean lowget (gint32* offset, gconstpointer address, gpointer callback, int type)
+static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, gpointer callback, int type)
 {
   static GHashTable* table = NULL;
   const GHashFunc func1 = (GHashFunc) g_direct_hash;
@@ -92,7 +93,7 @@ static inline gboolean lowget (gint32* offset, gconstpointer address, gpointer c
     {
       JContext context = {0};
 
-      j_context_init (&context);
+      j_context_init (&context, Dst->codegen);
       j_context_ljmp (&context, callback);
 
       gc = g_closure_new_simple (sizeof (Closure), NULL);
@@ -121,7 +122,7 @@ static inline gboolean lowget (gint32* offset, gconstpointer address, gpointer c
     }
 
   G_UNLOCK (lowtable);
-return adjust (offset, address, jc->callback, type);
+return adjust (Dst, offset, address, jc->callback, type);
 }
 
 const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type)
@@ -132,8 +133,8 @@ const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name
 
   if ((extern_ = (gpointer) j_extern_lookup (name, strlen (name))) == NULL)
     g_error ("(" G_STRLOC "): Unknown extern '%s'", name);
-  if ((good = (gboolean) adjust (&offset, address, extern_->address, type)) == FALSE)
-  if ((good = (gboolean) lowget (&offset, address, extern_->address, type)) == FALSE)
+  if ((good = (gboolean) adjust (Dst, &offset, address, extern_->address, type)) == FALSE)
+  if ((good = (gboolean) lowget (Dst, &offset, address, extern_->address, type)) == FALSE)
     g_error ("(" G_STRLOC "): Extern '%s' offset above 2 GB limit", name);
 return (offset);
 }

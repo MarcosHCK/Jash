@@ -83,7 +83,7 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   int result = 0;
   size_t sz = 0;
 
-  j_context_init (&context);
+  j_context_init (&context, self);
   j_context_prolog (&context);
   j_context_generate (&context, ast);
   j_context_epilog (&context);

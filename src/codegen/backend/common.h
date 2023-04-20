@@ -26,28 +26,11 @@
 |.externnames extern_names
 |.globals globl_
 |.globalnames globl_names
-|.section main, code, data
+|.section main, code, data, expansions
 
 |.type Jc, JClosure
-|.define Self, [rsp + (sizeof (gpointer) * 0)]
-|.define Error, [rsp + (sizeof (gpointer) * 1)]
-
 |.define RetContinue, 1
 |.define RetRemove, 0
-
-|.if PLATFORM == 'linux'
-|.define c_arg1, rdi
-|.define c_arg2, rsi
-|.define c_arg3, rdx
-|.define c_arg4, rcx
-|.define c_arg5, r8
-|.define c_arg6, r9
-|.elif PLATFORM == 'win32'
-|.define c_arg1, rcx
-|.define c_arg2, rdx
-|.define c_arg3, r8
-|.define c_arg4, r9
-|.endif
 #endif // __CODEGEN__
 
 #endif // __JASH_CODEGEN_BACKEND_COMMON__
