@@ -28,6 +28,10 @@ typedef struct _JWalker JWalker;
 #define Dst_DECL JContext* Dst
 #define Dst_REF (Dst->state)
 
+#if DEVELOPER == 1
+# define DASM_CHECKS
+#endif // DEVELOPER
+
 #define DASM_FDEF G_GNUC_INTERNAL
 #define DASM_EXTERN(ctx, addr, idx, type) \
     (j_extern_search ((ctx), (addr), extern_names [(idx)], (type)))
@@ -67,7 +71,7 @@ extern "C"
     guint maxpc;
     guint nextpc;
 
-    JCodegen* codegen;
+    GPtrArray* expansions;
     GHashTable* strtab;
   };
 
@@ -76,6 +80,8 @@ extern "C"
     GClosure closure;
     gpointer entry;
     JBlock block;
+    GClosure** children;
+    guint n_children;
   };
 
   struct _JExtern
@@ -88,7 +94,7 @@ extern "C"
   G_GNUC_INTERNAL void j_context_emit (Dst_DECL, JWalker* walker);
   G_GNUC_INTERNAL void j_context_epilog (Dst_DECL);
   G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast);
-  G_GNUC_INTERNAL void j_context_init (Dst_DECL, JCodegen* codegen);
+  G_GNUC_INTERNAL void j_context_init (Dst_DECL);
   G_GNUC_INTERNAL void j_context_ljmp (Dst_DECL, gpointer address);
   G_GNUC_INTERNAL void j_context_prolog (Dst_DECL);
   G_GNUC_INTERNAL void j_context_store (Dst_DECL, gpointer buffer, gsize bufsz);

@@ -93,7 +93,7 @@ static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, 
     {
       JContext context = {0};
 
-      j_context_init (&context, Dst->codegen);
+      j_context_init (&context);
       j_context_ljmp (&context, callback);
 
       gc = g_closure_new_simple (sizeof (Closure), NULL);

@@ -27,4 +27,7 @@
 .dirstamp
 
 jash
-jash.exe
+jash.*
+jash_gdb
+jash_gdb.*
+!jash.[ch]

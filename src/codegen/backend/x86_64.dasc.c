@@ -19,6 +19,10 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 #include <codegen/walker.h>
+#if DEVELOPER == 1
+# include <bfd.h>
+# include <codegen/debug/gdb.h>
+#endif // DEVELOPER
 
 #ifdef __CODEGEN__
 |.arch x64
@@ -44,11 +48,15 @@
 # define DASM_MAXSECTION (0)
 # define globl_entry (J_CONTEXT_LABEL_MAIN)
 # define globl__MAX (0)
+# define j_context_init_common
 static const unsigned char actions[];
 static const char* const globl_names[];
 static const char* const extern_names[];
 #endif // __CODEGEN__
 #include <dynasm/dasm_x86.h>
+
+const guint j_gdb_default_arch = bfd_arch_i386;
+const guint j_gdb_default_mach = bfd_mach_x86_64;
 
 #define stacksz_r \
   ( \
@@ -63,7 +71,6 @@ void j_context_clear (Dst_DECL)
 {
   dasm_free (Dst);
   g_free (Dst->labels);
-  g_object_unref (Dst->codegen);
   g_hash_table_remove_all (Dst->strtab);
   g_hash_table_unref (Dst->strtab);
 }
@@ -118,6 +125,7 @@ void j_context_emit (Dst_DECL, JWalker* walker)
       else
         {
           index_s = j_context_allocpc (Dst);
+          arguments [i++] = index_s;
 
 #if __CODEGEN__
           |.data
@@ -131,33 +139,19 @@ void j_context_emit (Dst_DECL, JWalker* walker)
 
   for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next)
     {
-      GError* tmperr = NULL;
-      GClosure* expansion;
-
-      expansions [i++] = j_context_allocpc (Dst);
-      expansion = j_codegen_emit (Dst->codegen, list->data, &tmperr);
-
-      g_assert_no_error (tmperr);
-
-#if __CODEGEN__
-      |.expansions
-      |=>(expansions [i - 1]):
-# if G_BYTE_ORDER == G_LITTLE_ENDIAN
-      | .dword (((guintptr) expansion) & G_MAXUINT32)
-      | .dword (((guintptr) expansion) >> 32)
-# elif G_BYTE_ORDER == G_BIG_ENDIAN
-      | .dword (((guintptr) expansion) >> 32)
-      | .dword (((guintptr) expansion) & G_MAXUINT32)
-# else
-# error Unsupported byte order
-# endif // G_BYTE_ORDER
-#endif // __CODEGEN__
+      expansions [i++] = Dst->expansions->len;
+      g_ptr_array_add (Dst->expansions, list->data);
     }
 
-  const guint chainpc = j_context_allocpc (Dst);
-  const guint n_invokes = g_queue_get_length (&walker->invocations);
+  guint chainpc = j_context_allocpc (Dst);
+  guint n_children = 0;
+
+  for (list = g_queue_peek_head_link (&walker->invocations); list; list = list->next)
+    {
+    }
+
   const gsize pipes_size = walker->n_pipes * sizeof (gint) * 2;
-  const gsize invokes_size = n_invokes * sizeof (gint);
+  const gsize children_size = n_children * sizeof (gint);
 
   G_STMT_START
     {
@@ -165,21 +159,19 @@ void j_context_emit (Dst_DECL, JWalker* walker)
       |.code
       |=>(chainpc):
       | push rbx
-      | sub rsp, (pipes_size + invokes_size)
-
-      | mov rbx, (walker->n_pipes - 1)
-      |1:
-
-      G_STATIC_ASSERT (sizeof (gint) * 2 == 8);
-
-      | lea c_arg1, [rsp+rbx*8+invokes_size]
-      | call extern pipe
-      | sub rbx, 1
-      | jns <1
-
-      | add rsp, (pipes_size + invokes_size)
-      | pop rbx
 #endif // __CODEGEN__
+
+      if (walker->n_pipes > 0)
+        {
+          g_assert_not_reached ();
+#if __CODEGEN__
+          | sub rsp, (pipes_size)
+          | mov rbx, (walker->n_pipes)
+          |1:
+          | dec rbx
+          | jnz <1
+#endif // __CODEGEN__     
+        }
     }
   G_STMT_END;
 
@@ -190,14 +182,12 @@ void j_context_emit (Dst_DECL, JWalker* walker)
 #undef CLEAR_MIXVAR
 }
 
-void j_context_init (Dst_DECL, JCodegen* codegen)
+void j_context_init (Dst_DECL)
 {
   Dst->labels = g_new (gpointer, globl__MAX);
   Dst->n_labels = globl__MAX;
-  Dst->nextpc = 0;
-  Dst->maxpc = 2;
-  Dst->codegen = g_object_ref (codegen);
-  Dst->strtab = g_hash_table_new (g_str_hash, g_str_equal);
+
+  j_context_init_common (Dst);
 
   dasm_init (Dst, DASM_MAXSECTION);
   dasm_setupglobal (Dst, Dst->labels, Dst->n_labels);
@@ -207,6 +197,9 @@ void j_context_init (Dst_DECL, JCodegen* codegen)
 #if __CODEGEN__
   |.main
   |->entry:
+  |.expansions
+  |->expansions:
+  |.main
 #endif // __CODEGEN__
 }
 

@@ -21,16 +21,32 @@
 #include <codegen/context.h>
 #include <codegen/walker.h>
 
-#if __CODEGEN__
-|.actionlist actions
-|.externnames extern_names
-|.globals globl_
-|.globalnames globl_names
-|.section main, code, data, expansions
+#if __cplusplus
+extern "C" {
+#endif // __cplusplus
 
-|.type Jc, JClosure
-|.define RetContinue, 1
-|.define RetRemove, 0
-#endif // __CODEGEN__
+  #if __CODEGEN__
+  |.actionlist actions
+  |.externnames extern_names
+  |.globals globl_
+  |.globalnames globl_names
+  |.section main, code, data, expansions
+
+  |.type Jc, JClosure
+  |.define RetContinue, 1
+  |.define RetRemove, 0
+  #endif // __CODEGEN__
+
+  static inline void j_context_init_common (Dst_DECL)
+  {
+    Dst->nextpc = 0;
+    Dst->maxpc = 2;
+    Dst->expansions = g_ptr_array_new ();
+    Dst->strtab = g_hash_table_new (g_str_hash, g_str_equal);
+  }
+
+#if __cplusplus
+}
+#endif // __cplusplus
 
 #endif // __JASH_CODEGEN_BACKEND_COMMON__

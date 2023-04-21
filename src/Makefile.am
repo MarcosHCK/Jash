@@ -36,6 +36,7 @@ noinst_HEADERS=\
 	codegen/block.h \
 	codegen/codegen.h \
 	codegen/context.h \
+	codegen/debug/gdb.h \
 	codegen/walker.h \
   lexer/datachannel.h \
   lexer/lexer.h \
@@ -100,6 +101,13 @@ codegen_liba_la_LDFLAGS=\
 codegen_liba_la_LIBADD=\
 	$(GLIB_LIBS) \
 	$(VOID)
+
+if DEBUG
+codegen_liba_la_SOURCES+= codegen/debug/gdb.c
+codegen_liba_la_LIBADD+= -lbfd
+else
+noinst_DATA+= codegen/debug/gdb.c
+endif
 
 lexer_liba_la_SOURCES=\
 	lexer/datachannel.c \
