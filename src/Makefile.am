@@ -37,6 +37,7 @@ noinst_HEADERS=\
 	codegen/codegen.h \
 	codegen/context.h \
 	codegen/debug/gdb.h \
+	codegen/system.h \
 	codegen/walker.h \
   lexer/datachannel.h \
   lexer/lexer.h \

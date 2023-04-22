@@ -19,18 +19,25 @@
 #include <config.h>
 #include <codegen/codegen.h>
 #include <codegen/context.h>
+#include <codegen/system.h>
 #include <glib-object.h>
-#include <unistd.h>
 
-typedef struct _Closure Closure;
-G_LOCK_DEFINE_STATIC (lowtable);
+static void fail (const gchar* fmt, ...) G_GNUC_NORETURN;
 
-struct _Closure
+static void fail (const gchar* fmt, ...)
 {
-  GClosure parent;
-  GCallback callback;
-  JBlock block;
-};
+  gchar* value;
+  va_list l;
+
+  va_start (l, fmt);
+  value = g_strdup_vprintf (fmt, l);
+  va_end (l);
+
+  g_error ("%s", value);
+  g_free (value);
+}
+
+G_LOCK_DEFINE_STATIC (lowtable);
 %}
 
 %struct-type
@@ -41,10 +48,27 @@ struct _Closure
 
 struct _JExtern {};
 %%
-execvp, G_CALLBACK (execvp)
-fork, G_CALLBACK (fork)
-pipe, G_CALLBACK (pipe)
+dup2, J_CALLBACK (dup2)
+execvp, J_CALLBACK (execvp)
+exit, J_CALLBACK (exit)
+fail, J_CALLBACK (fail)
+fork, J_CALLBACK (fork)
+g_queue_push_head, J_CALLBACK (g_queue_push_head)
+pipe, J_CALLBACK (pipe)
+open, J_CALLBACK (open)
 %%
+
+static void throw_runtime_error_fork (GError** error)
+{
+  int e = errno;
+  g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_RUNTIME_FORK, g_strerror (e));
+}
+
+static void j_block_free (JBlock* block)
+{
+  j_block_clear (block);
+  g_slice_free (JBlock, block);
+}
 
 static inline gboolean adjust (Dst_DECL, gint32* offset, gconstpointer address, gconstpointer callback, int type)
 {
@@ -79,50 +103,40 @@ static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, 
   static GHashTable* table = NULL;
   const GHashFunc func1 = (GHashFunc) g_direct_hash;
   const GEqualFunc func2 = (GEqualFunc) g_direct_equal;
-  const GDestroyNotify notify = (GDestroyNotify) g_closure_unref;
+  const GDestroyNotify notify = (GDestroyNotify) j_block_free;
 
-  GClosure* gc = NULL;
-  Closure* jc = NULL;
+  JBlock* block = NULL;
   int result = 0;
   size_t sz = 0;
 
   G_LOCK (lowtable);
   table = (table) ? table : g_hash_table_new_full (func1, func2, NULL, notify);
 
-  if ((jc = g_hash_table_lookup (table, callback)) == NULL)
+  if ((block = g_hash_table_lookup (table, callback)) == NULL)
     {
       JContext context = {0};
 
       j_context_init (&context);
       j_context_ljmp (&context, callback);
 
-      gc = g_closure_new_simple (sizeof (Closure), NULL);
-      jc = (Closure*) gc;
-
-      if (G_LIKELY (gc->floating))
-        {
-          g_closure_ref (gc);
-          g_closure_sink (gc);
-        }
-
       if ((result = dasm_link (&context, &sz)), G_UNLIKELY (result != 0))
         g_error ("(" G_STRLOC "): dasm_link ()!");
 
-      j_block_init (&jc->block, sz);
-      g_closure_add_finalize_notifier (gc, &jc->block, (GClosureNotify) j_block_clear);
+      j_block_init (block = g_slice_new (JBlock), sz);
 
-      if ((result = dasm_encode (&context, j_block_ptr (&jc->block))), G_UNLIKELY (result != 0))
+      if ((result = dasm_encode (&context, j_block_ptr (block))), G_UNLIKELY (result != 0))
         g_error ("(" G_STRLOC "): dasm_encode ()!");
 
-      jc->callback = G_CALLBACK (context.labels [J_CONTEXT_LABEL_MAIN]);
+      if (context.labels [J_CONTEXT_LABEL_MAIN] != j_block_ptr (block))
+        g_error ("(" G_STRLOC "): WTF?");
 
-      g_hash_table_insert (table, callback, gc);
-      j_block_protect (&jc->block);
+      g_hash_table_insert (table, callback, block);
+      j_block_protect (block);
       j_context_clear (&context);
     }
 
   G_UNLOCK (lowtable);
-return adjust (Dst, offset, address, jc->callback, type);
+return adjust (Dst, offset, address, j_block_ptr (block), type);
 }
 
 const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type)

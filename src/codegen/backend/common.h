@@ -30,19 +30,41 @@ extern "C" {
   |.externnames extern_names
   |.globals globl_
   |.globalnames globl_names
-  |.section main, code, data, expansions
+  |.section code, aux, data
 
   |.type Jc, JClosure
-  |.define RetContinue, 1
-  |.define RetRemove, 0
+  |.type gint, gint
+  |.type gpointer, gpointer
+  |.define RetContinue, J_CLOSURE_STATUS_CONTINUE
+  |.define RetRemove, J_CLOSURE_STATUS_REMOVE
   #endif // __CODEGEN__
 
   static inline void j_context_init_common (Dst_DECL)
   {
-    Dst->nextpc = 0;
+    Dst->nextstage = 0;
+    Dst->nextpc = 1;
     Dst->maxpc = 2;
     Dst->expansions = g_ptr_array_new ();
+    Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
     Dst->strtab = g_hash_table_new (g_str_hash, g_str_equal);
+  }
+
+  static inline void j_context_init_entry (Dst_DECL)
+  {
+    #if __CODEGEN__
+    |.code
+    |->entry:
+    #endif // __CODEGEN__
+  }
+
+  static inline void j_context_clear_common (Dst_DECL)
+  {
+    g_free (Dst->labels);
+    g_ptr_array_unref (Dst->expansions);
+    g_hash_table_remove_all (Dst->symbols);
+    g_hash_table_unref (Dst->symbols);
+    g_hash_table_remove_all (Dst->strtab);
+    g_hash_table_unref (Dst->strtab);
   }
 
 #if __cplusplus

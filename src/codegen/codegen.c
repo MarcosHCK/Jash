@@ -21,15 +21,24 @@
 #if DEVELOPER == 1
 # include <codegen/debug/gdb.h>
 #endif // DEVELOPER
+#include <errno.h>
+#include <wait.h>
 
 #define J_CODEGEN_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_CODEGEN, JCodegenClass))
 #define J_IS_CODEGEN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_CODEGEN))
 #define J_CODEGEN_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_CODEGEN, JCodegenClass))
 typedef struct _JCodegenClass JCodegenClass;
+typedef struct _GValue JCodegenErrorPrivate;
+static void j_codegen_error_private_init (JCodegenErrorPrivate* priv);
+#define j_codegen_error_private_copy g_value_copy
+#define j_codegen_error_private_clear g_value_unset
 
 struct _JCodegen
 {
   GObject parent;
+
+  /*<private>*/
+  GHashTable* variables;
 };
 
 struct _JCodegenClass
@@ -38,27 +47,61 @@ struct _JCodegenClass
 };
 
 G_DEFINE_FINAL_TYPE (JCodegen, j_codegen, G_TYPE_OBJECT);
-G_DEFINE_QUARK (j-codegen-error-quark, j_codegen_error);
+G_DEFINE_EXTENDED_ERROR (JCodegenError, j_codegen_error);
 
-static void j_codegen_class_init (JCodegenClass* klass) { }
-static void j_codegen_init (JCodegen* self) { }
+static void j_codegen_error_private_init (JCodegenErrorPrivate* priv)
+{
+#ifdef HAVE_MEMSET
+  memset (priv, 0, sizeof (GValue));
+#else // !HAVE_MEMSET
+  static GValue __null__ = G_VALUE_INIT;
+    *priv = __null__;
+#endif // HAVE_MEMSET
+}
+
+static void j_codegen_class_finalize (GObject* pself)
+{
+  JCodegen* self = (gpointer) pself;
+  g_hash_table_unref (self->variables);
+G_OBJECT_CLASS (j_codegen_parent_class)->finalize (pself);
+}
+
+static void j_codegen_class_dispose (GObject* pself)
+{
+  JCodegen* self = (gpointer) pself;
+  g_hash_table_remove_all (self->variables);
+G_OBJECT_CLASS (j_codegen_parent_class)->dispose (pself);
+}
+
+static void j_codegen_class_init (JCodegenClass* klass)
+{
+  G_OBJECT_CLASS (klass)->finalize = j_codegen_class_finalize;
+  G_OBJECT_CLASS (klass)->dispose = j_codegen_class_dispose;
+}
+
+static void j_codegen_init (JCodegen* self)
+{
+  const GHashFunc func1 = (GHashFunc) g_bytes_hash;
+  const GEqualFunc func2 = (GEqualFunc) g_bytes_equal;
+  const GDestroyNotify notify = (GDestroyNotify) g_bytes_unref;
+
+  self->variables = g_hash_table_new_full (func1, func2, notify, notify);
+}
 
 JCodegen* j_codegen_new ()
 {
   return g_object_new (J_TYPE_CODEGEN, NULL);
 }
 
-static void closure_notify (gpointer notify_data, JClosure* jc)
+GValue* j_codegen_error_value (const GError* error)
 {
-  GClosure** children = jc->children;
-  guint i, top = jc->n_children;
+  return j_codegen_error_get_private (error);
+}
 
+static void closure_nofity (gpointer __null__, JClosure* jc)
+{
+  g_queue_clear (&jc->waitq);
   j_block_clear (&jc->block);
-
-  for (i = 0; i < top; ++i)
-    {
-      g_closure_unref (children [i]);
-    }
 }
 
 static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_values, const GValue* param_values)
@@ -66,12 +109,46 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
   g_return_if_fail (return_value != NULL);
   g_return_if_fail (n_param_values == 1);
   g_return_if_fail (param_values != NULL);
-
   GClosure* gc = (gpointer) jc;
-  gboolean (* callback) (JClosure* self, GError** error, gpointer closure_data) = jc->entry;
-  gboolean result = callback (jc, g_value_get_pointer (param_values), gc->data);
+  GError** error = g_value_get_pointer (param_values);
+  GList* list;
 
-  g_value_set_boolean (return_value, result);
+  while ((list = g_queue_peek_head_link (&jc->waitq)) != NULL)
+    {
+      gint pid = GPOINTER_TO_INT (list->data);
+      gint status = 0;
+
+      if (waitpid (pid, &status, WNOHANG) < 0)
+        {
+          int e = errno;
+          g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_RUNTIME_WAIT, g_strerror (e));
+          g_value_set_int (return_value, J_CLOSURE_STATUS_REMOVE);
+          return;
+        }
+      else
+        {
+          if (!(WIFEXITED (status) || WIFSIGNALED (status)))
+            {
+              g_value_set_int (return_value, J_CLOSURE_STATUS_CONTINUE);
+              return;
+            }
+          else
+            {
+              GList* link = (list);
+              GList* next = (list = list->next);
+
+              waitpid (pid, &status, 0);
+              g_queue_unlink (&jc->waitq, link);
+              g_list_free (link);
+            }
+        }
+    }
+
+  
+  gint (*callback) (JClosure* self, GError** error, gpointer closure_data) = jc->entry;
+  gint result = callback (jc, error, gc->data);
+
+  g_value_set_int (return_value, result);
 }
 
 GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
@@ -94,9 +171,8 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   size_t sz = 0;
 
   j_context_init (&context);
-  j_context_prolog (&context);
   j_context_generate (&context, ast);
-  j_context_epilog (&context);
+  j_context_complete (&context);
 
   if (context.expansions->len > 0)
     {
@@ -133,20 +209,15 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   gc = g_closure_new_simple (sizeof (JClosure), g_object_ref (codegen));
   jc = (JClosure*) gc;
 
+  if (context.expansions->len > 0)
+  g_closure_add_finalize_notifier (gc, children, (GClosureNotify) g_ptr_array_unref);
   g_closure_add_finalize_notifier (gc, codegen, (GClosureNotify) g_object_unref);
-  g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_notify);
+  g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_nofity);
 #if DEVELOPER == 1
   g_closure_add_finalize_notifier (gc, gdb = j_gdb_new (), (GClosureNotify) j_gdb_free);
 #endif // DEVELOPER
   g_closure_set_marshal (gc, (GClosureMarshal) closure_marshal);
-
-  if (context.expansions->len == 0)
-    jc->n_children = 0;
-  else
-    {
-      jc->n_children = (guint) children->len;
-      jc->children = (GClosure**) g_ptr_array_free (children, FALSE);
-    }
+  
 
   if (G_LIKELY (gc->floating))
     {
@@ -154,6 +225,7 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
       g_closure_sink (gc);
     }
 
+  g_queue_init (&jc->waitq);
   j_block_init (&jc->block, sz);
 
   if ((result = dasm_encode (&context, j_block_ptr (&jc->block))), G_UNLIKELY (result != 0))
@@ -166,13 +238,26 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
 #if DEVELOPER == 1
   JGdbSection* section;
   JGdbSymbol* symbol;
+  GHashTableIter iter;
+  gpointer name;
+  gpointer index;
 
-  section = j_gdb_decl_section (gdb, "text", jc->block.ptr, jc->block.sz);
-  symbol = j_gdb_decl_function (gdb, "closure_entry", context.labels [J_CONTEXT_LABEL_MAIN], section);
+  section = j_gdb_decl_section (gdb, "text", j_block_ptr (&jc->block), j_block_sz (&jc->block));
+  symbol = j_gdb_decl_function (gdb, "entry", context.labels [J_CONTEXT_LABEL_MAIN], section);
+
+        g_hash_table_iter_init (&iter, context.symbols);
+  while (g_hash_table_iter_next (&iter, &name, &index))
+    {
+      j_gdb_decl_function (gdb, name, context.labels [GPOINTER_TO_UINT (index)], section);
+    }
+
+  g_file_set_contents ("closure", j_block_ptr (&jc->block), j_block_sz (&jc->block), &tmperr);
+  g_assert_no_error (tmperr);
 
   j_gdb_finish (gdb);
   j_gdb_register (gdb);
 #endif // DEVELOPER
+  jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
   jc->entry = G_CALLBACK (context.labels [J_CONTEXT_LABEL_MAIN]);
 return (j_block_protect (&jc->block), j_context_clear (&context), gc);
 }

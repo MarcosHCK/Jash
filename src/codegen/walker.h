@@ -23,6 +23,14 @@ typedef union _JArgument JArgument;
 typedef struct _JInvoke JInvoke;
 typedef struct _JWalker JWalker;
 
+#define J_INVOKE_STDFILE_TYPE_BITS (1)
+#define J_INVOKE_STDFILE_MODE_BITS (1)
+#define J_INVOKE_TARGET_TYPE_BITS (1)
+#define J_INVOKE_N_ARGUMENTS_BITS ((sizeof (guint) * 8) \
+                                  - (J_INVOKE_STDFILE_TYPE_BITS * 2 \
+                                  +  J_INVOKE_STDFILE_MODE_BITS \
+                                  +  J_INVOKE_TARGET_TYPE_BITS))
+
 #if __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -35,10 +43,11 @@ extern "C" {
       guint fd;
     } stdin, stdout;
 
-    guint stdin_type : 1;
-    guint stdout_mode : 1;
-    guint stdout_type : 1;
-    guint target_type : 1;
+    guint stdin_type : J_INVOKE_STDFILE_TYPE_BITS;
+    guint stdout_mode : J_INVOKE_STDFILE_MODE_BITS;
+    guint stdout_type : J_INVOKE_STDFILE_TYPE_BITS;
+    guint target_type : J_INVOKE_TARGET_TYPE_BITS;
+    guint n_arguments : J_INVOKE_N_ARGUMENTS_BITS;
 
     union _JArgument
     {
@@ -103,9 +112,12 @@ extern "C" {
 
   static inline JInvoke* j_invoke_new (guint n_arguments)
   {
+    g_assert (g_bit_storage (n_arguments) < J_INVOKE_N_ARGUMENTS_BITS);
+    JInvoke* self = NULL;
+
     const gsize s_size = G_SIZEOF_MEMBER (JInvoke, target) + G_STRUCT_OFFSET (JInvoke, target);
     const gsize a_size = G_SIZEOF_MEMBER (JInvoke, first_argument) * n_arguments;
-  return g_malloc (s_size + a_size);
+  return (self = g_malloc (s_size + a_size), self->n_arguments = n_arguments, self);
   }
 
   static inline guint j_walker_add_argument (JWalker* walker, const gchar* value)
@@ -119,6 +131,13 @@ extern "C" {
   {
     guint index = g_queue_get_length (&walker->expansions);
                   g_queue_push_tail (&walker->expansions, ast);
+        return index;
+  }
+
+  static inline guint j_walker_add_invoke (JWalker* walker, JInvoke* invoke)
+  {
+    guint index = g_queue_get_length (&walker->invocations);
+                  g_queue_push_tail (&walker->invocations, invoke);
         return index;
   }
 

@@ -115,35 +115,34 @@ static GClosure* load (JAsh* self, const gchar* source, gboolean from_file, GErr
 return (closure);
 }
 
-GClosure* j_ash_load_data (JAsh* self, const gchar* data, GError** error)
+static gboolean run (JAsh* self, GClosure* closure, gboolean interactive, GError** error)
 {
-  return load (self, data, 0, error);
-}
+  GValue param_values [1] = { G_VALUE_INIT };
+  GValue return_value [1] = { G_VALUE_INIT };
+  GError* tmperr = NULL;
+  gint status;
 
-GClosure* j_ash_load_file (JAsh* self, const gchar* filename, GError** error)
-{
-  return load (self, filename, 1, error);
-}
+  g_value_init (return_value + 0, G_TYPE_INT);
+  g_value_init (param_values + 0, G_TYPE_POINTER);
+  g_value_set_pointer (param_values + 0, &tmperr);
 
-gboolean j_ash_run (JAsh* self, GClosure* closure, GError** error)
-{
-  GValue values [1] = { G_VALUE_INIT };
-  GValue result [1] = { G_VALUE_INIT };
-  gboolean return_;
-
-  g_value_init (values + 0, G_TYPE_POINTER);
-  g_value_init (result, G_TYPE_BOOLEAN);
-
-  g_value_set_pointer (values + 0, error);
-
-  g_closure_invoke (closure, result, 1, values, NULL);
-  g_value_unset (values + 0);
-return (return_ = g_value_get_boolean (result), g_value_unset (result), return_);
+  do
+  {
+    if ((g_closure_invoke (closure, return_value, 1, param_values, NULL)), G_UNLIKELY (tmperr != NULL))
+      {
+        g_propagate_error (error, tmperr);
+        break;
+      }
+  } while (g_value_get_int (return_value) == J_CLOSURE_STATUS_CONTINUE);
+    g_value_unset (return_value);
+    g_value_unset (param_values + 0);
+return (tmperr != NULL);
 }
 
 void j_ash_run_interactive (JAsh* self, GError** error)
 {
   GClosure* closure = NULL;
+  gboolean continue_ = 0;
   GError* tmperr = NULL;
   gchar* line;
 
@@ -153,10 +152,8 @@ void j_ash_run_interactive (JAsh* self, GError** error)
     {
       while (TRUE)
       {
-        line = j_readline_getline (self->readline);
-        closure = j_ash_load_data (self, line, &tmperr);
-
-        if (G_UNLIKELY (tmperr != NULL))
+        if ((closure = load (self, line = j_readline_getline (self->readline), 0, &tmperr), g_free (line)),
+              G_UNLIKELY (tmperr != NULL))
           {
             const gint code = tmperr->code;
             const gchar* domain = g_quark_to_string (tmperr->domain);
@@ -167,8 +164,11 @@ void j_ash_run_interactive (JAsh* self, GError** error)
           }
         else
           {
-            j_ash_run (self, closure, error);
-            g_closure_unref (closure);
+            if ((run (self, closure, 1, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL))
+              {
+                g_propagate_error (error, tmperr);
+                break;
+              }
           }
       }
 
@@ -182,13 +182,11 @@ void j_ash_run_script (JAsh* self, const gchar* filename, GError** error)
   GClosure* closure = NULL;
   GError* tmperr = NULL;
 
-  closure = j_ash_load_file (self, filename, &tmperr);
-
-  if (G_UNLIKELY (tmperr != NULL))
+  if ((closure = load (self, filename, 1, &tmperr)), G_UNLIKELY (tmperr != NULL))
     g_propagate_error (error, tmperr);
   else
     {
-      j_ash_run (self, closure, error);
+      run (self, closure, 0, error);
       g_closure_unref (closure);
     }
 }

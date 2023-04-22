@@ -127,6 +127,7 @@ static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gin
       switch (j_ast_get_type (child))
         {
           case J_AST_TYPE_ARGUMENTS: arguments = child; break;
+          case J_AST_TYPE_BUILTIN: target = child; break;
           case J_AST_TYPE_REDIRECT_INPUT: redirect_in = child; break;
           case J_AST_TYPE_REDIRECT_OUTPUT_APPEND: redirect_out = child; break;
           case J_AST_TYPE_REDIRECT_OUTPUT_REPLACE: redirect_out = child; break;
@@ -164,6 +165,7 @@ static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gin
     {
       invoke->stdin_type = adjust_stdfile (& invoke->stdin, redirect_in, in_pipe);
       invoke->stdout_type = adjust_stdfile (& invoke->stdout, redirect_out, out_pipe);
+      j_walker_add_invoke (walker, invoke);
     }
   G_STMT_END;
 }

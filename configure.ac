@@ -171,6 +171,10 @@ PKG_CHECK_MODULES([READLINE], [readline])
 # Checks for library functions.
 #
 
+AC_FUNC_REALLOC
+AC_CHECK_FUNCS([memcpy])
+AC_CHECK_FUNCS([memset])
+
 #
 # Prepare output
 #

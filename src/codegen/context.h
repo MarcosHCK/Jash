@@ -25,6 +25,8 @@ typedef struct _JClosure JClosure;
 typedef struct _JExtern JExtern;
 typedef struct _JWalker JWalker;
 
+typedef void (*JCallback) ();
+
 #define Dst_DECL JContext* Dst
 #define Dst_REF (Dst->state)
 
@@ -70,37 +72,45 @@ extern "C"
   
     guint maxpc;
     guint nextpc;
+    guint nextstage;
 
     GPtrArray* expansions;
+    GHashTable* symbols;
     GHashTable* strtab;
   };
 
   struct _JClosure
   {
     GClosure closure;
-    gpointer entry;
+    GQueue waitq;
     JBlock block;
-    GClosure** children;
-    guint n_children;
+    gpointer entry;
+
+    union
+    {
+      GClosure* closure;
+      gchar* expanded;
+    } *expansions;
   };
 
   struct _JExtern
   {
     gint name;
-    GCallback address;
+    JCallback address;
   };
 
   G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_complete (Dst_DECL);
   G_GNUC_INTERNAL void j_context_emit (Dst_DECL, JWalker* walker);
-  G_GNUC_INTERNAL void j_context_epilog (Dst_DECL);
   G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast);
   G_GNUC_INTERNAL void j_context_init (Dst_DECL);
   G_GNUC_INTERNAL void j_context_ljmp (Dst_DECL, gpointer address);
-  G_GNUC_INTERNAL void j_context_prolog (Dst_DECL);
-  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gpointer buffer, gsize bufsz);
+  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz);
 
   G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
   G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
+
+  #define J_CALLBACK(func) ((JCallback) ((func)))
 
   #define j_context_allocpc(context) \
     (({ \
@@ -113,6 +123,18 @@ extern "C"
           } \
  ; \
         __nextpc; \
+      }))
+  #define j_context_symbol_once(context,name) \
+    (({ \
+        JContext* __context = ((context)); \
+        gpointer __name = G_STRINGIFY (name); \
+        gpointer __value = GINT_TO_POINTER (globl_##name ); \
+ ; \
+        if (!g_hash_table_contains (__context->symbols, __name)) \
+          { \
+            emit_symbol_once_##name (__context); \
+            g_hash_table_insert (__context->symbols, __name, __value); \
+          } \
       }))
 
 #if __cplusplus
