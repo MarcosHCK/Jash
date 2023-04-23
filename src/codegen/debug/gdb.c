@@ -17,8 +17,6 @@
  */
 #include <config.h>
 #include <bfd.h>
-#include <codegen/codegen.h>
-#include <codegen/context.h>
 #include <codegen/debug/gdb.h>
 #include <gmodule.h>
 
@@ -26,7 +24,19 @@ typedef struct _JGdbGlobalModule JGdbGlobalModule;
 typedef struct _JGdbGlobalDescriptor JGdbGlobalDescriptor;
 G_MODULE_EXPORT JGdbGlobalDescriptor __jit_debug_descriptor;
 G_MODULE_EXPORT void __jit_debug_register_code ();
+G_GNUC_INTERNAL JGdb* _j_gdb_new (bfd* abfd);
 static G_LOCK_DEFINE (global_lock);
+
+typedef struct
+{
+  bfd_size_type size;
+  bfd_byte* buffer;
+
+  /* This definition is taken from      */
+  /* libbfd.h which is a bfd's privite  */
+  /* header, luckly for us bfd hasn't   */
+  /* changed in a while, but ...        */
+} bfd_in_memory;
 
 typedef enum
 {
@@ -55,118 +65,32 @@ struct _JGdbGlobalDescriptor
 struct _JGdb
 {
   bfd* abfd;
-  GPtrArray* symbols;
   JGdbGlobalModule link;
 };
 
 JGdbGlobalDescriptor __jit_debug_descriptor = { PACKAGE_VERSION_MAJOR, 0, NULL, NULL, };
 void G_GNUC_NO_INLINE __jit_debug_register_code (void) { __asm__ __volatile__ (""); }
-#define bfd_lasterr() (bfd_errmsg (bfd_get_error ()))
 
-static bfd* _bfd_create (const gchar* name)
-{
-  static gsize core = 0;
-  static bfd templ = {0};
-  bfd* abfd = NULL;
-
-  if (g_once_init_enter (&core))
-    {
-      bfd_init ();
-      bfd_find_target ("default", &templ);
-      g_once_init_leave (&core, 1);
-    }
-
-  if ((abfd = bfd_create (name, &templ)) == NULL)
-    g_error ("(" G_STRLOC "): bfd_create ()!: %s", bfd_lasterr ());
-  if (!bfd_make_writable (abfd))
-    g_error ("(" G_STRLOC "): bfd_make_writable ()!: %s", bfd_lasterr ());
-
-  flagword file_flags = HAS_LINENO | HAS_DEBUG | HAS_SYMS;
-  flagword applicable_flags = file_flags & bfd_applicable_file_flags (abfd);
-
-  if (!bfd_set_arch_mach (abfd, j_gdb_default_arch, j_gdb_default_mach))
-    g_error ("(" G_STRLOC "): bfd_set_arch_mach ()!: %s", bfd_lasterr ());
-  if (!bfd_set_file_flags (abfd, applicable_flags))
-    g_error ("(" G_STRLOC "): bfd_set_file_flags ()!: %s", bfd_lasterr ());
-  if (!bfd_set_format (abfd, bfd_object))
-    g_error ("(" G_STRLOC "): bfd_set_format ()!: %s", bfd_lasterr ());
-return (abfd);
-}
-
-JGdb* j_gdb_new ()
+JGdb* _j_gdb_new (bfd* abfd)
 {
   JGdb* self;
 
   self = g_slice_new0 (JGdb);
-  self->abfd = _bfd_create ("(stdin)");
-  self->symbols = g_ptr_array_new ();
-return (self);
+  self->link.symfile_addr = G_STRUCT_MEMBER (bfd_byte*, abfd->iostream, G_STRUCT_OFFSET (bfd_in_memory, buffer));
+  self->link.symfile_size = G_STRUCT_MEMBER (bfd_size_type, abfd->iostream, G_STRUCT_OFFSET (bfd_in_memory, size));
+return (self->abfd = abfd, self);
 }
 
-void j_gdb_free (JGdb* gdb)
+void j_gdb_free (JGdb* self)
 {
-  JGdb* self = (gdb);
-
   bfd_close (self->abfd);
-  g_ptr_array_unref (self->symbols);
-  g_slice_free (JGdb, gdb);
-}
-
-JGdbSection* j_gdb_decl_section (JGdb* gdb, const gchar* name, gpointer address, gsize size)
-{
-  JGdb* self = (gdb);
-  bfd* abfd = self->abfd;
-  asection* sec;
-
-  if ((sec = bfd_make_section (abfd, name)) == NULL)
-    g_error ("(" G_STRLOC "): bfd_make_section ()!: %s", bfd_lasterr ());
-  if (!bfd_set_section_size (sec, (bfd_size_type) size))
-    g_error ("(" G_STRLOC "): bfd_set_section_size ()!: %s", bfd_lasterr ());
-  if (!bfd_set_section_vma (sec, (bfd_vma) address))
-    g_error ("(" G_STRLOC "): bfd_set_section_vma ()!: %s", bfd_lasterr ());
-  if (!bfd_set_section_alignment (sec, GLIB_SIZEOF_VOID_P))
-    g_error ("(" G_STRLOC "): bfd_set_section_alignment ()!: %s", bfd_lasterr ());
-return (JGdbSection*) sec;
-}
-
-JGdbSymbol* j_gdb_decl_function (JGdb* gdb, const gchar* name, gpointer address, JGdbSection* section)
-{
-  JGdb* self = (gdb);
-  bfd* abfd = self->abfd;
-  gchar* symname = NULL;
-  gsize length = strlen (name);
-  asymbol* sym;
-
-  if ((sym = bfd_make_empty_symbol (abfd)) == NULL)
-    g_error ("(" G_STRLOC "): bfd_make_empty_symbol ()!: %s", bfd_lasterr ());
-
-  g_snprintf (symname = bfd_alloc (abfd, length + 2), length + 2, "%c%.*s",
-                bfd_get_symbol_leading_char (abfd), (int) length, name);
-
-  sym->flags = BSF_DEBUGGING | BSF_FUNCTION | BSF_GLOBAL;
-  sym->name = symname;
-  sym->section = (asection*) section;
-  sym->value = (symvalue) address;
-return (g_ptr_array_add (self->symbols, sym), (JGdbSymbol*) sym);
-}
-
-void j_gdb_finish (JGdb* gdb)
-{
-  JGdb* self = (gdb);
-  bfd* abfd = self->abfd;
-
-  if (!bfd_set_symtab (abfd, (asymbol**) self->symbols->pdata, (unsigned) self->symbols->len))
-    g_error ("(" G_STRLOC "): bfd_set_symtab ()!: %s", bfd_lasterr ());
+  g_slice_free (JGdb, self);
 }
 
 void j_gdb_register (JGdb* gdb)
 {
   JGdb* self = (gdb);
   JGdbGlobalModule* link = & self->link;
-  bfd* abfd = self->abfd;
-
-  link->symfile_addr = (gpointer) abfd->origin;
-  link->symfile_size = (gsize) bfd_get_size (abfd);
 
   G_LOCK (global_lock);
     {

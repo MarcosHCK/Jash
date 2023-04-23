@@ -32,6 +32,7 @@ typedef void (*JCallback) ();
 
 #if DEVELOPER == 1
 # define DASM_CHECKS
+# include <codegen/debug/gdb.h>
 #endif // DEVELOPER
 
 #define DASM_FDEF G_GNUC_INTERNAL
@@ -77,6 +78,9 @@ extern "C"
     GPtrArray* expansions;
     GHashTable* symbols;
     GHashTable* strtab;
+#if DEVELOPER == 1
+    JGdbBuilder debug_builder;
+#endif // DEVELOPER
   };
 
   struct _JClosure
@@ -85,6 +89,9 @@ extern "C"
     GQueue waitq;
     JBlock block;
     gpointer entry;
+#if DEVELOPER == 1
+    JGdb* debug_object;
+#endif // DEVELOPER
 
     union
     {
@@ -101,6 +108,9 @@ extern "C"
 
   G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
   G_GNUC_INTERNAL void j_context_complete (Dst_DECL);
+#if DEVELOPER == 1
+  G_GNUC_INTERNAL void j_context_debug_build (Dst_DECL);
+#endif // DEVELOPER
   G_GNUC_INTERNAL void j_context_emit (Dst_DECL, JWalker* walker);
   G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast);
   G_GNUC_INTERNAL void j_context_init (Dst_DECL);

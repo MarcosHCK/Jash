@@ -20,6 +20,7 @@
 #include <glib.h>
 
 typedef struct _JGdb JGdb;
+typedef struct _JGdbBuilder JGdbBuilder;
 typedef struct _JGdbSection JGdbSection;
 typedef struct _JGdbSymbol JGdbSymbol;
 
@@ -27,14 +28,25 @@ typedef struct _JGdbSymbol JGdbSymbol;
 extern "C" {
 #endif // __cplusplus
 
+  struct _JGdbBuilder
+  {
+    gpointer _private1_;
+    gpointer _private2_;
+  };
+
   G_GNUC_INTERNAL extern const guint j_gdb_default_arch;
   G_GNUC_INTERNAL extern const guint j_gdb_default_mach;
 
-  G_GNUC_INTERNAL JGdb* j_gdb_new ();
+  G_GNUC_INTERNAL void j_gdb_builder_init (JGdbBuilder* builder);
+  G_GNUC_INTERNAL void j_gdb_builder_clear (JGdbBuilder* builder);
+  G_GNUC_INTERNAL JGdbSymbol* j_gdb_builder_decl_function (JGdbBuilder* builder, const gchar* name, gpointer address, JGdbSection* section);
+  G_GNUC_INTERNAL JGdbSymbol* j_gdb_builder_decl_object (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size, JGdbSection* section);
+  G_GNUC_INTERNAL JGdbSection* j_gdb_builder_decl_section (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size);
+  G_GNUC_INTERNAL void j_gdb_builder_fill_section (JGdbBuilder* builder, gpointer address, gsize size, JGdbSection* section);
+  G_GNUC_INTERNAL JGdb* j_gdb_builder_end (JGdbBuilder* builder);
+  G_GNUC_INTERNAL void j_gdb_builder_set_filename (JGdbBuilder* builder, const gchar* filename);
+
   G_GNUC_INTERNAL void j_gdb_free (JGdb* gdb);
-  G_GNUC_INTERNAL JGdbSection* j_gdb_decl_section (JGdb* gdb, const gchar* name, gpointer address, gsize size);
-  G_GNUC_INTERNAL JGdbSymbol* j_gdb_decl_function (JGdb* gdb, const gchar* name, gpointer address, JGdbSection* section);
-  G_GNUC_INTERNAL void j_gdb_finish (JGdb* gdb);
   G_GNUC_INTERNAL void j_gdb_register (JGdb* gdb);
   G_GNUC_INTERNAL void j_gdb_unregister (JGdb* gdb);
 

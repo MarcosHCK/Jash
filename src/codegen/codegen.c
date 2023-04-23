@@ -102,6 +102,10 @@ static void closure_nofity (gpointer __null__, JClosure* jc)
 {
   g_queue_clear (&jc->waitq);
   j_block_clear (&jc->block);
+#if DEVELOPER == 1
+  j_gdb_unregister (jc->debug_object);
+  j_gdb_free (jc->debug_object);
+#endif // DEVELOPER
 }
 
 static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_values, const GValue* param_values)
@@ -159,9 +163,6 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   JCodegen* self = (codegen);
   JContext context = {0};
   GPtrArray* children = NULL;
-#if DEVELOPER == 1
-  JGdb* gdb = NULL;
-#endif // DEVELOPER
   GClosure* gc = NULL;
   JClosure* jc = NULL;
   GError* tmperr = NULL;
@@ -213,11 +214,7 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   g_closure_add_finalize_notifier (gc, children, (GClosureNotify) g_ptr_array_unref);
   g_closure_add_finalize_notifier (gc, codegen, (GClosureNotify) g_object_unref);
   g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_nofity);
-#if DEVELOPER == 1
-  g_closure_add_finalize_notifier (gc, gdb = j_gdb_new (), (GClosureNotify) j_gdb_free);
-#endif // DEVELOPER
   g_closure_set_marshal (gc, (GClosureMarshal) closure_marshal);
-  
 
   if (G_LIKELY (gc->floating))
     {
@@ -234,28 +231,9 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
       g_closure_unref (gc);
       j_context_clear (&context);
     }
-
 #if DEVELOPER == 1
-  JGdbSection* section;
-  JGdbSymbol* symbol;
-  GHashTableIter iter;
-  gpointer name;
-  gpointer index;
-
-  section = j_gdb_decl_section (gdb, "text", j_block_ptr (&jc->block), j_block_sz (&jc->block));
-  symbol = j_gdb_decl_function (gdb, "entry", context.labels [J_CONTEXT_LABEL_MAIN], section);
-
-        g_hash_table_iter_init (&iter, context.symbols);
-  while (g_hash_table_iter_next (&iter, &name, &index))
-    {
-      j_gdb_decl_function (gdb, name, context.labels [GPOINTER_TO_UINT (index)], section);
-    }
-
-  g_file_set_contents ("closure", j_block_ptr (&jc->block), j_block_sz (&jc->block), &tmperr);
-  g_assert_no_error (tmperr);
-
-  j_gdb_finish (gdb);
-  j_gdb_register (gdb);
+  j_context_debug_build (&context);
+  j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));
 #endif // DEVELOPER
   jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
   jc->entry = G_CALLBACK (context.labels [J_CONTEXT_LABEL_MAIN]);

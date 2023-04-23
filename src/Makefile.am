@@ -50,6 +50,7 @@ noinst_HEADERS=\
 	$(VOID)
 
 noinst_DATA=\
+	codegen/backend/common.dasc.c \
 	codegen/backend/x86_64.dasc.c \
 	$(VOID)
 
@@ -104,9 +105,11 @@ codegen_liba_la_LIBADD=\
 	$(VOID)
 
 if DEBUG
+codegen_liba_la_SOURCES+= codegen/debug/builder.c
 codegen_liba_la_SOURCES+= codegen/debug/gdb.c
 codegen_liba_la_LIBADD+= -lbfd
 else
+noinst_DATA+= codegen/debug/builder.c
 noinst_DATA+= codegen/debug/gdb.c
 endif
 

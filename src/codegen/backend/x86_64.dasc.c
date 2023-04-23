@@ -28,7 +28,7 @@
 
 #ifdef __CODEGEN__
 |.arch x64
-|.include codegen/backend/common.h
+|.include codegen/backend/common.dasc.c
 
 |.define Self, gpointer:rbp[-1]
 |.define Error, gpointer:rbp[-2]
@@ -50,9 +50,13 @@
 #else // !__CODEGEN__
 # define DASM_MAXSECTION (0)
 # define globl_entry (J_CONTEXT_LABEL_MAIN)
+# define globl___aux_start (0)
+# define globl___code_start (0)
+# define globl___data_start (0)
+# define globl___code_end (0)
+# define globl___aux_end (0)
+# define globl___data_end (0)
 # define globl__MAX (0)
-# define j_context_init_common
-# define j_context_clear_common
 static const unsigned char actions[];
 static const char* const globl_names[];
 static const char* const extern_names[];
@@ -75,6 +79,8 @@ static void emit_invoke_child_side (Dst_DECL, JInvoke* invoke, guint* arguments,
 static void emit_invoke_parent_side (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_stdfile (Dst_DECL, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc);
 static void emit_invoke (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions);
+static void emit_symbol_once_close_s (Dst_DECL);
+static void emit_symbol_once_close_all (Dst_DECL);
 static void emit_symbol_once_dup2_s (Dst_DECL);
 static void emit_symbol_once_fork_s (Dst_DECL);
 static void emit_symbol_once_open_s (Dst_DECL);
@@ -90,13 +96,55 @@ void j_context_complete (Dst_DECL)
   | mov rax, RetRemove
   | ret
 #endif // __CODEGEN__
+
+  j_context_complete_common (Dst);
 }
 
-void j_context_clear (Dst_DECL)
+#if DEVELOPER == 1
+
+void j_context_debug_build (Dst_DECL)
 {
-  j_context_clear_common (Dst);
-  dasm_free (Dst);
+  JGdbSection* aux = NULL;
+  gpointer aux_start = Dst->labels [globl___aux_start];
+  gpointer aux_end = Dst->labels [globl___aux_end];
+  gssize aux_size = aux_end - aux_start;
+  JGdbSection* code = NULL;
+  gpointer code_start = Dst->labels [globl___code_start];
+  gpointer code_end = Dst->labels [globl___code_end];
+  gssize code_size = code_end - code_start;
+  JGdbSection* data = NULL;
+  gpointer data_start = Dst->labels [globl___data_start];
+  gpointer data_end = Dst->labels [globl___data_end];
+  gssize data_size = data_end - data_start;
+  JGdbSymbol* symbol;
+  guint i;
+
+  g_assert (aux_start < aux_end);
+  g_assert (code_start < code_end);
+  g_assert (data_start < data_end);
+
+  aux = j_gdb_builder_decl_section (&Dst->debug_builder, "aux", aux_start, aux_size);
+  code = j_gdb_builder_decl_section (&Dst->debug_builder, "code", code_start, code_size);
+  data = j_gdb_builder_decl_section (&Dst->debug_builder, "data", data_start, data_size);
+
+  for (i = 0; i < globl__MAX; ++i)
+    {
+      gpointer base = (gpointer) Dst->labels [i];
+      gpointer name = (gpointer) globl_names [i];
+
+      if (base == NULL) continue;
+      else if (aux_end >= base && base >= aux_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, aux);
+      else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
+      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, data);
+      else g_assert_not_reached ();
+    }
+
+  j_gdb_builder_fill_section (&Dst->debug_builder, aux_start, aux_size, aux);
+  j_gdb_builder_fill_section (&Dst->debug_builder, code_start, code_size, code);
+  j_gdb_builder_fill_section (&Dst->debug_builder, data_start, data_size, data);
 }
+
+#endif // DEVELOPER
 
 void j_context_emit (Dst_DECL, JWalker* walker)
 {
@@ -156,6 +204,10 @@ void j_context_emit (Dst_DECL, JWalker* walker)
 
   if (walker->n_pipes > 0)
     {
+#if __CODEGEN__
+      | sub rsp, (walker->n_pipes * sizeof (gint))
+      | mov Pipes, rsp
+#endif // __CODEGEN__
       for (i = 0; i < walker->n_pipes; ++i)
         {
 #if __CODEGEN__
@@ -172,6 +224,15 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   for (list = g_queue_peek_head_link (&walker->invocations); list; list = list->next)
     emit_invoke (Dst, (JInvoke*) list->data, arguments, expansions);
 
+  if (walker->n_pipes > 0)
+    {
+#if __CODEGEN__
+      | mov c_arg1, Pipes
+      | mov c_arg2, (walker->n_pipes)
+      | call ->close_all
+#endif // __CODEGEN__
+    }
+
 #if __CODEGEN__
   | mov rax, Self
   | leave
@@ -185,21 +246,6 @@ void j_context_emit (Dst_DECL, JWalker* walker)
 #undef DECL_MIXVAR
 #undef INIT_MIXVAR
 #undef CLEAR_MIXVAR
-}
-
-void j_context_init (Dst_DECL)
-{
-  Dst->labels = g_new (gpointer, globl__MAX);
-  Dst->n_labels = globl__MAX;
-
-  j_context_init_common (Dst);
-
-  dasm_init (Dst, DASM_MAXSECTION);
-  dasm_setupglobal (Dst, Dst->labels, Dst->n_labels);
-  dasm_setup (Dst, actions);
-  dasm_growpc (Dst, Dst->maxpc);
-
-  j_context_init_entry (Dst);
 }
 
 void j_context_ljmp (Dst_DECL, gpointer address)
@@ -420,8 +466,28 @@ return pc;
   |.code
 ||}
 |.endmacro
+| GROUP1_ONCE_FUNC close
 | GROUP1_ONCE_FUNC dup2
 | GROUP1_ONCE_FUNC fork
 | GROUP1_ONCE_FUNC open
 | GROUP1_ONCE_FUNC pipe
+
+||static void emit_symbol_once_close_all (Dst_DECL)
+||{
+    |.aux
+    |->close_all:
+    | push rbx
+    | push rbp
+    | mov rbp, c_arg1
+    | mov rbx, c_arg2
+    |1:
+    | mov c_arg1, [rbp+rbx*4-4]
+    | call ->close_s
+    | dec rbx
+    | jnz <1
+    | pop rbp
+    | pop rbx
+    | ret
+    |.code
+||}
 #endif // __CODEGEN__
