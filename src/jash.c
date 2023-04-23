@@ -27,8 +27,10 @@
 #define J_ASH_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_ASH, JAshClass))
 typedef struct _JAshClass JAshClass;
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
+#define _g_closure_unref0(var) ((var == NULL) ? NULL : (var = (g_closure_unref (var), NULL)))
 #define _g_object_unref0(var) ((var == NULL) ? NULL : (var = (g_object_unref (var), NULL)))
-#define _j_readline_unref0(var) ((var == NULL) ? NULL : (var = (j_readline_unref (var), NULL)))
+#define _j_ast_free0(var) ((var == NULL) ? NULL : (var = (j_ast_free (var), NULL)))
+#define _j_tokens_unref0(var) ((var == NULL) ? NULL : (var = (j_tokens_unref (var), NULL)))
 
 struct _JAsh
 {
@@ -88,31 +90,36 @@ static GClosure* load (JAsh* self, const gchar* source, gboolean from_file, GErr
     {
       if ((tokens = j_lexer_scan_from_file (self->lexer, source, &tmperr)), G_UNLIKELY (tmperr != NULL))
         {
-          g_propagate_error (error, tmperr);
-          j_tokens_unref (tokens);
+          g_propagate_prefixed_error (error, tmperr, "%s: ", (from_file) ? source : "(stdin)");
+          _j_tokens_unref0 (tokens);
         }
     }
   else
     {
       if ((tokens = j_lexer_scan_from_data (self->lexer, source, strlen (source), &tmperr)), G_UNLIKELY (tmperr != NULL))
         {
-          g_propagate_error (error, tmperr);
-          j_tokens_unref (tokens);
+          g_propagate_prefixed_error (error, tmperr, "%s: ", (from_file) ? source : "(stdin)");
+          _j_tokens_unref0 (tokens);
         }
     }
 
-  if ((ast = j_parser_parse (self->parser, tokens, &tmperr), j_tokens_unref (tokens)), G_UNLIKELY (tmperr != NULL))
+  if ((ast = j_parser_parse (self->parser, tokens, &tmperr)), G_UNLIKELY (tmperr != NULL))
     {
       g_propagate_prefixed_error (error, tmperr, "%s: ", (from_file) ? source : "(stdin)");
+      _j_tokens_unref0 (tokens);
+      _j_ast_free0 (ast);
       return NULL;
     }
 
-  if ((closure = j_codegen_emit (self->codegen, ast, &tmperr), j_ast_free (ast)), G_UNLIKELY (tmperr != NULL))
+  if ((closure = j_codegen_emit (self->codegen, ast, &tmperr)), G_UNLIKELY (tmperr != NULL))
     {
       g_propagate_error (error, tmperr);
+      _g_closure_unref0 (closure);
+      _j_tokens_unref0 (tokens);
+      _j_ast_free0 (ast);
       return NULL;
     }
-return (closure);
+return (j_ast_free (ast), j_tokens_unref (tokens), closure);
 }
 
 static gboolean run (JAsh* self, GClosure* closure, gboolean interactive, GError** error)

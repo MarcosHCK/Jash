@@ -234,6 +234,9 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
 #if DEVELOPER == 1
   j_context_debug_build (&context);
   j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));
+
+  g_file_set_contents ("closure", j_block_ptr (&jc->block), j_block_sz (&jc->block), &tmperr);
+  g_assert_no_error (tmperr);
 #endif // DEVELOPER
   jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
   jc->entry = G_CALLBACK (context.labels [J_CONTEXT_LABEL_MAIN]);

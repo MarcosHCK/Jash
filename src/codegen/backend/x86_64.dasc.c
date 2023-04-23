@@ -65,6 +65,7 @@ static const char* const extern_names[];
 
 const guint j_gdb_default_arch = bfd_arch_i386;
 const guint j_gdb_default_mach = bfd_mach_x86_64;
+typedef union _JInvokeStdfile JInvokeStdfile;
 
 #define stacksz_r \
   ( \
@@ -73,19 +74,17 @@ const guint j_gdb_default_mach = bfd_mach_x86_64;
     + sizeof (gpointer) /* error */ \
   )
 
-typedef union _JInvokeStdfile JInvokeStdfile;
-
-static void emit_invoke_child_side (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_parent_side (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_stdfile (Dst_DECL, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc);
-static void emit_invoke (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions);
+static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
+static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
+static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc);
+static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_symbol_once_close_s (Dst_DECL);
-static void emit_symbol_once_close_all (Dst_DECL);
 static void emit_symbol_once_dup2_s (Dst_DECL);
+static void emit_symbol_once_execvp_s (Dst_DECL);
 static void emit_symbol_once_fork_s (Dst_DECL);
 static void emit_symbol_once_open_s (Dst_DECL);
 static void emit_symbol_once_pipe_s (Dst_DECL);
-static gint take_string (Dst_DECL, gconstpointer data, gssize length);
+static gint take_string (Dst_DECL, gconstpointer data, gsize length);
 G_STATIC_ASSERT (J_CONTEXT_LABEL_MAIN == globl_entry);
 
 void j_context_complete (Dst_DECL)
@@ -177,13 +176,9 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   INIT_MIXVAR (arguments, g_queue_get_length (&walker->arguments));
   INIT_MIXVAR (expansions, g_queue_get_length (&walker->expansions));
 
-#if __CODEGEN__
-  |.data
-#endif // __CODEGEN__
-
   for (list = g_queue_peek_head_link (&walker->arguments), i = 0; list; list = list->next)
     {
-      arguments [i++] = take_string (Dst, list->data, -1);
+      arguments [i++] = take_string (Dst, list->data, strlen (list->data) + 1);
     }
 
   for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next)
@@ -205,14 +200,39 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   if (walker->n_pipes > 0)
     {
 #if __CODEGEN__
-      | sub rsp, (walker->n_pipes * sizeof (gint))
+      |.aux
+      |->close_all:
+      | push rbx
+      | mov rbx, c_arg1
+#endif // __CODEGEN__
+      for (i = 0; i < walker->n_pipes; ++i)
+        {
+          guint j;
+
+          for (j = 0; j < 2; ++j)
+          {
+#if __CODEGEN__
+            | movsxd c_arg1, dword gint:rbx [i + j]
+            | test c_arg1, c_arg1
+            | js >1
+            | call ->close_s
+            |1:
+#endif // __CODEGEN__   
+          }
+        }
+#if __CODEGEN__
+      | pop rbx
+      | ret
+      || j_context_symbol_once (Dst, close_s);
+      |.code
+      | sub rsp, (#gpointer + #gint * (walker->n_pipes * 2))
       | mov Pipes, rsp
 #endif // __CODEGEN__
       for (i = 0; i < walker->n_pipes; ++i)
         {
 #if __CODEGEN__
           | mov c_arg1, Pipes
-          | lea c_arg1, gint:c_arg1[i*2]
+          | lea c_arg1, gint:c_arg1 [i*2]
           | call ->pipe_s
           || j_context_symbol_once (Dst, pipe_s);
 #endif // __CODEGEN__
@@ -222,13 +242,15 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   Dst->nextstage = j_context_allocpc (Dst);
 
   for (list = g_queue_peek_head_link (&walker->invocations); list; list = list->next)
-    emit_invoke (Dst, (JInvoke*) list->data, arguments, expansions);
+    {
+      emit_invoke (Dst, walker, (JInvoke*) list->data, arguments, expansions);
+    }
 
   if (walker->n_pipes > 0)
     {
 #if __CODEGEN__
+      |.code
       | mov c_arg1, Pipes
-      | mov c_arg2, (walker->n_pipes)
       | call ->close_all
 #endif // __CODEGEN__
     }
@@ -266,7 +288,7 @@ void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz)
   for (i = 0; i < n_dwords; i++)
     {
 #if __CODEGEN__
-      |.dword (dwords [i])
+      |.dword (GUINT32_TO_LE (dwords [i]))
 #endif // __CODEGEN__
     }
 
@@ -281,17 +303,23 @@ void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz)
     }
 }
 
-static void emit_invoke_child_side (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions)
+static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
 {
   JArgument* args = & invoke->target;
   guint n_arguments = invoke->n_arguments + 1;
   guint i, first_arg = 0;
 
-  emit_invoke_stdfile (Dst, invoke, invoke->stdin_type, STDIN_FILENO, & invoke->stdin);
-  emit_invoke_stdfile (Dst, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);
+  emit_invoke_stdfile (Dst, walker, invoke, invoke->stdin_type, STDIN_FILENO, & invoke->stdin);
+  emit_invoke_stdfile (Dst, walker, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);
 
+  if (walker->n_pipes > 0)
+    {
 #if __CODEGEN__
-  | mov rcx, rsp
+      | mov c_arg1, Pipes
+      | call ->close_all
+#endif // __CODEGEN__
+    }
+#if __CODEGEN__
   | sub rsp, (GLIB_SIZEOF_VOID_P * (n_arguments + 1))
 #endif // __CODEGEN__
 
@@ -321,11 +349,11 @@ static void emit_invoke_child_side (Dst_DECL, JInvoke* invoke, guint* arguments,
           }
       }
 #if __CODEGEN__
-      | mov gpointer:rsp[i], rax
+      | mov gpointer:rsp [i], rax
 #endif // __CODEGEN__
     }
 #if __CODEGEN__
-    | mov qword gpointer:rsp[n_arguments], 0
+    | mov qword gpointer:rsp [n_arguments], 0
 #endif // __CODEGEN__
 
   if (first_arg == 0)
@@ -333,13 +361,13 @@ static void emit_invoke_child_side (Dst_DECL, JInvoke* invoke, guint* arguments,
 #if __CODEGEN__
       | mov c_arg1, [rsp]
       | lea c_arg2, [rsp]
-      | call extern execvp
-      | int3
+      | call ->execvp_s
+      || j_context_symbol_once (Dst, execvp_s);
 #endif // __CODEGEN__
     }
 }
 
-static void emit_invoke_parent_side (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions)
+static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
 {
 #if __CODEGEN__
   | mov rcx, gpointer:rbp[-1]
@@ -349,81 +377,97 @@ static void emit_invoke_parent_side (Dst_DECL, JInvoke* invoke, guint* arguments
 #endif // __CODEGEN__
 }
 
-static void emit_invoke_stdfile (Dst_DECL, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc)
+static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc)
 {
   switch (type)
-    {
-      case J_INVOKE_STD_FILE_TYPE_FILE:
-        {
-          if (desc->filename != NULL)
+  {
+    case J_INVOKE_STD_FILE_TYPE_FILE:
+      if (desc->filename == NULL)
+        break;
+      else
+      {
+        const gchar* name = desc->filename;
+        const gsize length = strlen (name) + 1;
+
+        guint namepc = take_string (Dst, name, length);
+        guint mode = 0;
+
+        switch (fileno)
           {
-            const gchar* name = desc->filename;
-            const gsize length = strlen (name) + 1;
-
-            guint namepc = take_string (Dst, name, length);
-            guint mode = 0;
-
-            switch (fileno)
-            {
-              default: g_assert_not_reached ();
-              case STDIN_FILENO: mode = O_RDONLY; break;
-              case STDOUT_FILENO:
+            default: g_assert_not_reached ();
+            case STDIN_FILENO: mode = O_RDONLY; break;
+            case STDOUT_FILENO:
+              {
+                mode = O_WRONLY;
+                switch (invoke->stdout_mode)
                 {
-                  mode = O_WRONLY;
-                  switch (invoke->stdout_mode)
-                  {
-                    default: g_assert_not_reached ();
-                    case J_INVOKE_STD_FILE_MODE_APPEND: mode |= O_APPEND; break;
-                    case J_INVOKE_STD_FILE_MODE_REPLACE: mode |= O_CREAT; break;
-                  }
-
-                  break;
+                  default: g_assert_not_reached ();
+                  case J_INVOKE_STD_FILE_MODE_APPEND: mode |= O_APPEND; break;
+                  case J_INVOKE_STD_FILE_MODE_REPLACE: mode |= O_CREAT; break;
                 }
-            }
 
-#if __CODEGEN__
-            | lea c_arg1, [=>(namepc)]
-            | mov c_arg2, (mode)
-            | call ->open_s
-            || j_context_symbol_once (Dst, open_s);
-            | mov c_arg1, rax
-            | mov c_arg2, (fileno)
-            | call ->dup2_s
-            || j_context_symbol_once (Dst, dup2_s);
-#endif // __CODEGEN__
+                break;
+              }
           }
 
-          break;
-        }
+#if __CODEGEN__
+        | lea c_arg1, [=>(namepc)]
+        | mov c_arg2, (mode)
+        | call ->open_s
+        || j_context_symbol_once (Dst, open_s);
+        | mov c_arg1, rax
+        | mov c_arg2, (fileno)
+        | call ->dup2_s
+        || j_context_symbol_once (Dst, dup2_s);
+#endif // __CODEGEN__
+        break;
+      }
 
-      case J_INVOKE_STD_FILE_TYPE_PIPE:
-        {
-          g_assert_not_reached ();
-          break;
-        }
-    }
+    case J_INVOKE_STD_FILE_TYPE_PIPE:
+      {
+        guint offset;
+
+        switch (fileno)
+          {
+            case STDIN_FILENO: offset = 0; break;
+            case STDOUT_FILENO: offset = 1; break;
+            default: g_assert_not_reached ();
+          }
+#if __CODEGEN__
+        | mov rax, Pipes
+        | lea rax, gint:rax [desc->fd * 2 + offset]
+        | movsxd c_arg1, dword [rax]
+        | mov dword [rax], -1
+        | mov c_arg2, (fileno)
+        | call ->dup2_s
+        || j_context_symbol_once (Dst, dup2_s);
+#endif // __CODEGEN__
+        break;
+      }
+  }
 }
 
-static void emit_invoke (Dst_DECL, JInvoke* invoke, guint* arguments, guint* expansions)
+static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
 {
   /* do fork */
 #if __CODEGEN__
   |9:
   | call ->fork_s
   || j_context_symbol_once (Dst, fork_s);
+  | test rax, rax
   | jnz >9
 #endif // __CODEGEN__
 
-  emit_invoke_child_side (Dst, invoke, arguments, expansions);
+  emit_invoke_child_side (Dst, walker, invoke, arguments, expansions);
 
 #if __CODEGEN__
   |9:
 #endif // __CODEGEN__
 
-  emit_invoke_parent_side (Dst, invoke, arguments, expansions);
+  emit_invoke_parent_side (Dst, walker, invoke, arguments, expansions);
 }
 
-static gint take_string (Dst_DECL, gconstpointer data, gssize length)
+static gint take_string (Dst_DECL, gconstpointer data, gsize length)
 {
   gpointer lpc = NULL;
   guint pc = 0;
@@ -437,7 +481,7 @@ static gint take_string (Dst_DECL, gconstpointer data, gssize length)
       |.data
       |=>(pc):
 #endif // __CODEGEN__
-      j_context_store (Dst, data, ((length >= 0) ? length : (strlen (data) + 1)));
+      j_context_store (Dst, data, length);
       g_hash_table_insert (Dst->strtab, (gpointer) data, GUINT_TO_POINTER (pc));
 #if __CODEGEN__
       |.code
@@ -454,7 +498,7 @@ return pc;
   |.aux
   |->dy_name .. _s:
   | call extern dy_name
-  | test rax, rax
+  | test eax, eax
   | js >1
   | ret
   |1:
@@ -468,26 +512,8 @@ return pc;
 |.endmacro
 | GROUP1_ONCE_FUNC close
 | GROUP1_ONCE_FUNC dup2
+| GROUP1_ONCE_FUNC execvp
 | GROUP1_ONCE_FUNC fork
 | GROUP1_ONCE_FUNC open
 | GROUP1_ONCE_FUNC pipe
-
-||static void emit_symbol_once_close_all (Dst_DECL)
-||{
-    |.aux
-    |->close_all:
-    | push rbx
-    | push rbp
-    | mov rbp, c_arg1
-    | mov rbx, c_arg2
-    |1:
-    | mov c_arg1, [rbp+rbx*4-4]
-    | call ->close_s
-    | dec rbx
-    | jnz <1
-    | pop rbp
-    | pop rbx
-    | ret
-    |.code
-||}
 #endif // __CODEGEN__

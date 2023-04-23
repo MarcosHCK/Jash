@@ -25,9 +25,11 @@
 |.globals globl_
 |.globalnames globl_names
 |.section aux, code, data
+
 |.type Jc, JClosure
 |.type gint, gint
 |.type gpointer, gpointer
+
 |.define RetContinue, J_CLOSURE_STATUS_CONTINUE
 |.define RetRemove, J_CLOSURE_STATUS_REMOVE
 #else

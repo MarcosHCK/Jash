@@ -27,13 +27,14 @@ static void fail (const gchar* fmt, ...) G_GNUC_NORETURN;
 static void fail (const gchar* fmt, ...)
 {
   gchar* value;
+  gint e = errno;
   va_list l;
 
   va_start (l, fmt);
   value = g_strdup_vprintf (fmt, l);
   va_end (l);
 
-  g_error ("%s", value);
+  g_error ("%s (%s)", value, g_strerror (e));
   g_free (value);
 }
 
@@ -48,14 +49,15 @@ G_LOCK_DEFINE_STATIC (lowtable);
 
 struct _JExtern {};
 %%
+close, J_CALLBACK (close)
 dup2, J_CALLBACK (dup2)
 execvp, J_CALLBACK (execvp)
 exit, J_CALLBACK (exit)
 fail, J_CALLBACK (fail)
 fork, J_CALLBACK (fork)
-g_queue_push_head, J_CALLBACK (g_queue_push_head)
-pipe, J_CALLBACK (pipe)
 open, J_CALLBACK (open)
+pipe, J_CALLBACK (pipe)
+g_queue_push_head, J_CALLBACK (g_queue_push_head)
 %%
 
 static void throw_runtime_error_fork (GError** error)

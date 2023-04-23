@@ -150,7 +150,7 @@ static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gin
   for (child = j_ast_get_first_child (arguments), i = 0;
        child;
        child = j_ast_get_next_sibling (child), ++i)
-    walk_argument (Dst, walker, child, & invoke->first_argument + i);
+    walk_argument (Dst, walker, child, args + i);
     walk_target (Dst, walker, target, invoke);
 
   if (redirect_out != NULL)
