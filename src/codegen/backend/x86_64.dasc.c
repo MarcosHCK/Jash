@@ -122,9 +122,9 @@ void j_context_debug_build (Dst_DECL)
   g_assert (code_start < code_end);
   g_assert (data_start < data_end);
 
-  aux = j_gdb_builder_decl_section (&Dst->debug_builder, "aux", aux_start, aux_size);
-  code = j_gdb_builder_decl_section (&Dst->debug_builder, "code", code_start, code_size);
-  data = j_gdb_builder_decl_section (&Dst->debug_builder, "data", data_start, data_size);
+  aux = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "aux", aux_start, aux_size);
+  code = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "code", code_start, code_size);
+  data = j_gdb_builder_decl_section_as_data (&Dst->debug_builder, "data", data_start, data_size);
 
   for (i = 0; i < globl__MAX; ++i)
     {
@@ -134,7 +134,7 @@ void j_context_debug_build (Dst_DECL)
       if (base == NULL) continue;
       else if (aux_end >= base && base >= aux_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, aux);
       else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
-      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, data);
+      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
       else g_assert_not_reached ();
     }
 

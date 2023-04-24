@@ -24,19 +24,8 @@ typedef struct _JGdbGlobalModule JGdbGlobalModule;
 typedef struct _JGdbGlobalDescriptor JGdbGlobalDescriptor;
 G_MODULE_EXPORT JGdbGlobalDescriptor __jit_debug_descriptor;
 G_MODULE_EXPORT void __jit_debug_register_code ();
-G_GNUC_INTERNAL JGdb* _j_gdb_new (bfd* abfd);
+G_GNUC_INTERNAL JGdb* _j_gdb_new (GBytes* bytes);
 static G_LOCK_DEFINE (global_lock);
-
-typedef struct
-{
-  bfd_size_type size;
-  bfd_byte* buffer;
-
-  /* This definition is taken from      */
-  /* libbfd.h which is a bfd's privite  */
-  /* header, luckly for us bfd hasn't   */
-  /* changed in a while, but ...        */
-} bfd_in_memory;
 
 typedef enum
 {
@@ -64,26 +53,27 @@ struct _JGdbGlobalDescriptor
 
 struct _JGdb
 {
-  bfd* abfd;
+  GBytes* bytes;
   JGdbGlobalModule link;
 };
 
 JGdbGlobalDescriptor __jit_debug_descriptor = { PACKAGE_VERSION_MAJOR, 0, NULL, NULL, };
 void G_GNUC_NO_INLINE __jit_debug_register_code (void) { __asm__ __volatile__ (""); }
 
-JGdb* _j_gdb_new (bfd* abfd)
+JGdb* _j_gdb_new (GBytes* bytes)
 {
-  JGdb* self;
+  JGdb* self = NULL;
+  gsize size = 0;
 
   self = g_slice_new0 (JGdb);
-  self->link.symfile_addr = G_STRUCT_MEMBER (bfd_byte*, abfd->iostream, G_STRUCT_OFFSET (bfd_in_memory, buffer));
-  self->link.symfile_size = G_STRUCT_MEMBER (bfd_size_type, abfd->iostream, G_STRUCT_OFFSET (bfd_in_memory, size));
-return (self->abfd = abfd, self);
+  self->link.symfile_addr = (gpointer) g_bytes_get_data (bytes, NULL);
+  self->link.symfile_size = (gsize) g_bytes_get_size (bytes);
+return (self->bytes = g_bytes_ref (bytes), self);
 }
 
 void j_gdb_free (JGdb* self)
 {
-  bfd_close (self->abfd);
+  g_bytes_unref (self->bytes);
   g_slice_free (JGdb, self);
 }
 

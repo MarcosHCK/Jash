@@ -18,40 +18,75 @@
 #include <config.h>
 #include <bfd.h>
 #include <codegen/debug/gdb.h>
+#include <fcntl.h>
+#include <glib.h>
+#include <glib/gstdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
-G_GNUC_INTERNAL JGdb* _j_gdb_new (bfd* abfd);
+G_GNUC_INTERNAL JGdb* _j_gdb_new (GBytes* bytes);
 #define builder_abfd(builder) (G_STRUCT_MEMBER (bfd*, ((builder)), G_STRUCT_OFFSET (JGdbBuilder, _private1_)))
 #define builder_symbols(builder) (G_STRUCT_MEMBER (GPtrArray*, ((builder)), G_STRUCT_OFFSET (JGdbBuilder, _private2_)))
 #define _bfd_close0(var) ((var == NULL) ? NULL : (var = (bfd_close (var), NULL)))
 #define _g_ptr_array_unref0(var) ((var == NULL) ? NULL : (var = (g_ptr_array_unref (var), NULL)))
+#define __g_close0(var) ((var == -1) ? -1 : (var = (_g_close (var), -1)))
 #define bfd_lasterr() (bfd_errmsg (bfd_get_error ()))
 
-static bfd* _bfd_get_template (void) G_GNUC_CONST;
-static bfd* _bfd_get_template (void)
+static inline bfd* bfd_get_template (void) G_GNUC_CONST;
+static inline bfd* bfd_get_template (void)
 {
   static bfd* __template__ = NULL;
   if (g_once_init_enter (&__template__))
     {
       static bfd templ = {0};
-  
       if (bfd_init () != BFD_INIT_MAGIC)
-        g_error ("(" G_STRLOC "): bfd_init ()!: %s\n", bfd_lasterr ());
-      if (bfd_find_target ("default", &templ) == NULL)
-        g_error ("(" G_STRLOC "): bfd_find_target ()!: %s\n", bfd_lasterr ());
-
+        g_error ("(" G_STRLOC"): bfs_init()!: %s", bfd_lasterr ());
+      if (bfd_find_target ("default", &templ) == 0)
+        g_error ("(" G_STRLOC "): bfd_find_target()!: %s", bfd_lasterr ());
       g_once_init_leave (&__template__, &templ);
     }
-return __template__;
+return (__template__);
+}
+
+static inline gchar* bfd_strdup (bfd* abfd, const gchar* src) G_GNUC_MALLOC;
+static inline gchar* bfd_strdup (bfd* abfd, const gchar* src)
+{
+  gsize length = strlen (src);
+  gchar* dst = bfd_alloc (abfd, length +1);
+#if HAVE_MEMCPY
+  memcpy (dst, src, length + 1);
+#else // !HAVE_MEMCPY
+  g_strlcpy (dst, src, length + 1);
+#endif // HAVE_MEMCPY
+return dst;
+}
+
+static inline gchar* bfd_strdup_printf (bfd* abfd, const gchar* fmt, ...) G_GNUC_PRINTF (2, 3);
+static inline gchar* bfd_strdup_printf (bfd* abfd, const gchar* fmt, ...)
+{
+  va_list l, l2;
+  va_start (l, fmt);
+
+  G_VA_COPY (l2, l);
+
+  gsize length = g_printf_string_upper_bound (fmt, l);
+  gchar* value = bfd_alloc (abfd, ++length);
+  gint done = g_vsnprintf (value, length, fmt, l2);
+return (va_end (l), va_end (l2), value);
 }
 
 void j_gdb_builder_init (JGdbBuilder* builder)
 {
-  builder_abfd (builder) = bfd_create ("(stdin)", _bfd_get_template ());
+  builder_abfd (builder) = bfd_create ("(stdin)", bfd_get_template ());
   builder_symbols (builder) = g_ptr_array_new ();
 
+  if (G_UNLIKELY (builder_abfd (builder) == NULL))
+    g_error ("(" G_STRLOC "): bfd_create ()!: %s", bfd_lasterr ());
+
   bfd* abfd = builder_abfd (builder);
-  flagword file_flags = HAS_DEBUG | HAS_SYMS;
-  flagword applicable_flags = file_flags & bfd_applicable_file_flags (abfd);
+  const flagword file_flags = D_PAGED | HAS_DEBUG | HAS_LOCALS | HAS_SYMS | WP_TEXT;
+  const flagword applicable_flags = file_flags & bfd_applicable_file_flags (abfd);
 
   if (!bfd_make_writable (abfd))
     g_error ("(" G_STRLOC "): bfd_make_writable ()!: %s", bfd_lasterr ());
@@ -69,42 +104,48 @@ void j_gdb_builder_clear (JGdbBuilder* builder)
   _g_ptr_array_unref0 (builder_symbols (builder));
 }
 
+void j_gdb_builder_decl_entry (JGdbBuilder* builder, gpointer address)
+{
+  bfd* abfd = builder_abfd (builder);
+  bfd_set_start_address (abfd, (bfd_vma) address);
+}
+
 JGdbSymbol* j_gdb_builder_decl_function (JGdbBuilder* builder, const gchar* name, gpointer address, JGdbSection* section)
 {
   bfd* abfd = builder_abfd (builder);
   GPtrArray* symbols = builder_symbols (builder);
   gsize length = strlen (name);
+  gsize alloc = length + 2 + 9;
   gchar* symname = NULL;
   asymbol* sym = NULL;
+  gchar led = 0;
 
   if ((sym = bfd_make_empty_symbol (abfd)) == NULL)
     g_error ("(" G_STRLOC "): bfd_make_empty_symbol ()!: %s", bfd_lasterr ());
 
-  g_snprintf (symname = bfd_alloc (abfd, length + 2), length + 2, "%c%.*s",
-                bfd_get_symbol_leading_char (abfd), (int) length, name);
-
-  sym->flags = BSF_DEBUGGING | BSF_FUNCTION;
-  sym->name = symname;
-  sym->section = (asection*) section;
-  sym->value = (symvalue) address;
+  sym->flags = BSF_FUNCTION | BSF_LOCAL;
+  sym->name = ((led = bfd_get_symbol_leading_char (abfd)) == 0) ? bfd_strdup (abfd, name) : bfd_strdup_printf (abfd, "%c%s", led, name);
+  sym->section = & G_STRUCT_MEMBER (asection, section, 0);
+  sym->value = GPOINTER_TO_UINT (address - G_STRUCT_MEMBER (bfd_vma, section, G_STRUCT_OFFSET (asection, vma)));
+  bfd_print_symbol (abfd, stdout, sym, bfd_print_symbol_all);
+  g_fprintf (stdout, "\n");
 return (g_ptr_array_add (symbols, sym), (JGdbSymbol*) sym);
 }
 
 JGdbSymbol* j_gdb_builder_decl_object (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size, JGdbSection* section)
 {
   asymbol* sym = (gpointer) j_gdb_builder_decl_function (builder, name, address, section);
-            sym->flags = BSF_DEBUGGING | BSF_OBJECT;
+            sym->flags = BSF_LOCAL | BSF_OBJECT;
 return (JGdbSymbol*) sym;
 }
 
-JGdbSection* j_gdb_builder_decl_section (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size)
+static JGdbSection* j_gdb_builder_decl_section (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size, flagword section_flags)
 {
   bfd* abfd = builder_abfd (builder);
-  flagword section_flags = SEC_ALLOC | SEC_LOAD | SEC_READONLY | SEC_CODE | SEC_HAS_CONTENTS;
   flagword applicable_flags = section_flags & bfd_applicable_section_flags (abfd);
   asection* sec = NULL;
 
-  if ((sec = bfd_make_section (abfd, name)) == NULL)
+  if ((sec = bfd_make_section (abfd, bfd_strdup (abfd, name))) == NULL)
     g_error ("(" G_STRLOC "): bfd_make_section ()!: %s", bfd_lasterr ());
   if (!bfd_set_section_alignment (sec, GLIB_SIZEOF_VOID_P))
     g_error ("(" G_STRLOC "): bfd_set_section_alignment ()!: %s", bfd_lasterr ());
@@ -117,6 +158,16 @@ JGdbSection* j_gdb_builder_decl_section (JGdbBuilder* builder, const gchar* name
 return (JGdbSection*) sec;
 }
 
+JGdbSection* j_gdb_builder_decl_section_as_code (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size)
+{
+  return j_gdb_builder_decl_section (builder, name, address, size, SEC_ALLOC | SEC_LOAD | SEC_READONLY | SEC_CODE | SEC_HAS_CONTENTS);
+}
+
+JGdbSection* j_gdb_builder_decl_section_as_data (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size)
+{
+  return j_gdb_builder_decl_section (builder, name, address, size, SEC_ALLOC | SEC_LOAD | SEC_READONLY | SEC_DATA | SEC_HAS_CONTENTS);
+}
+
 void j_gdb_builder_fill_section (JGdbBuilder* builder, gpointer address, gsize size, JGdbSection* section)
 {
   if (!bfd_set_section_contents (builder_abfd (builder), (asection*) section, address, 0, size))
@@ -127,19 +178,16 @@ JGdb* j_gdb_builder_end (JGdbBuilder* builder)
 {
   bfd* abfd = g_steal_pointer (&builder_abfd (builder));
   GPtrArray* symbols = builder_symbols (builder);
-  asymbol** syms = NULL;
+  gchar* name = abfd->usrdata;
+  GBytes* bytes = NULL;
   JGdb* gdb = NULL;
 
-  syms = bfd_alloc (abfd, sizeof (asymbol*) * symbols->len);
-#ifdef HAVE_MEMCPY
-  memcpy (syms, symbols->pdata, sizeof (asymbol*) * symbols->len);
-#else // !HAVE_MEMCPY
-  guint i;
-  for (i = 0; i < symbols->len; ++i)
-    syms [i] = g_ptr_array_index (symbols, i);
-#endif // HAVE_MEMCPY
-
-  if (!bfd_set_symtab (abfd, syms, symbols->len))
+  if (!bfd_set_symtab (abfd, (asymbol**) symbols->pdata, symbols->len))
     g_error ("(" G_STRLOC "): bfd_set_symtab ()!: %s", bfd_lasterr ());
-return (gdb = _j_gdb_new (abfd), j_gdb_builder_clear (builder), gdb);
+  if (!bfd_close (abfd))
+    g_error ("(" G_STRLOC "): bfd_close ()!: %s", bfd_lasterr ());
+
+  static const gchar __null__ [64] = {0};
+  bytes = g_bytes_new_static (&__null__, sizeof (__null__));
+return (gdb = _j_gdb_new (bytes), g_bytes_unref (bytes), gdb);
 }
