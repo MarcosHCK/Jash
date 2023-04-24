@@ -205,6 +205,7 @@ void j_context_emit (Dst_DECL, JWalker* walker)
       | push rbx
       | mov rbx, c_arg1
 #endif // __CODEGEN__
+
       for (i = 0; i < walker->n_pipes; ++i)
         {
           guint j;
@@ -212,11 +213,8 @@ void j_context_emit (Dst_DECL, JWalker* walker)
           for (j = 0; j < 2; ++j)
           {
 #if __CODEGEN__
-            | movsxd c_arg1, dword gint:rbx [i + j]
-            | test c_arg1, c_arg1
-            | js >1
-            | call ->close_s
-            |1:
+            | movsxd c_arg1, dword JPipe:rbx [i] [j]
+            | call ->close_0
 #endif // __CODEGEN__   
           }
         }
@@ -224,15 +222,25 @@ void j_context_emit (Dst_DECL, JWalker* walker)
       | pop rbx
       | ret
       || j_context_symbol_once (Dst, close_s);
+      |.aux
+      |->close_0:
+      | test c_arg1, c_arg1
+      | js >1
+      | call ->close_s
+      |1:
+      | ret
+#endif // __CODEGEN__
+
+#if __CODEGEN__
       |.code
-      | sub rsp, (#gpointer + #gint * (walker->n_pipes * 2))
+      | sub rsp, (#gpointer + (walker->n_pipes * #JPipe))
       | mov Pipes, rsp
 #endif // __CODEGEN__
       for (i = 0; i < walker->n_pipes; ++i)
         {
 #if __CODEGEN__
           | mov c_arg1, Pipes
-          | lea c_arg1, gint:c_arg1 [i*2]
+          | lea c_arg1, JPipe:c_arg1 [i]
           | call ->pipe_s
           || j_context_symbol_once (Dst, pipe_s);
 #endif // __CODEGEN__
@@ -249,7 +257,6 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   if (walker->n_pipes > 0)
     {
 #if __CODEGEN__
-      |.code
       | mov c_arg1, Pipes
       | call ->close_all
 #endif // __CODEGEN__
@@ -259,7 +266,7 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   | mov rax, Self
   | leave
   | lea rcx, [=>(Dst->nextstage)]
-  | mov Jc:rax->entry, rcx
+  | mov JClosure:rax->entry, rcx
   | mov rax, RetContinue
   | ret
 #endif // __CODEGEN__
@@ -342,7 +349,7 @@ static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, 
           {
 #if __CODEGEN__
             | mov rax, Self
-            | mov rax, Jc:rax->expansions
+            | mov rax, JClosure:rax->expansions
             | mov rax, gpointer:rax [expansions [args [i].index]]
 #endif // __CODEGEN__
             break;
@@ -371,7 +378,7 @@ static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke,
 {
 #if __CODEGEN__
   | mov rcx, gpointer:rbp[-1]
-  | lea c_arg1, Jc:rcx->waitq
+  | lea c_arg1, JClosure:rcx->waitq
   | mov c_arg2, rax
   | call extern g_queue_push_head
 #endif // __CODEGEN__
@@ -435,7 +442,7 @@ static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, gui
           }
 #if __CODEGEN__
         | mov rax, Pipes
-        | lea rax, gint:rax [desc->fd * 2 + offset]
+        | lea rax, JPipe:rax [desc->fd] [offset]
         | movsxd c_arg1, dword [rax]
         | mov dword [rax], -1
         | mov c_arg2, (fileno)

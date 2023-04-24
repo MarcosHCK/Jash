@@ -19,6 +19,8 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 
+typedef gint JPipe [2];
+
 # if __CODEGEN__
 |.actionlist actions
 |.externnames extern_names
@@ -26,9 +28,9 @@
 |.globalnames globl_names
 |.section aux, code, data
 
-|.type Jc, JClosure
-|.type gint, gint
 |.type gpointer, gpointer
+|.type JClosure, JClosure
+|.type JPipe, JPipe
 
 |.define RetContinue, J_CLOSURE_STATUS_CONTINUE
 |.define RetRemove, J_CLOSURE_STATUS_REMOVE
