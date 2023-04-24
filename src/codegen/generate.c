@@ -221,29 +221,24 @@ static void walk_target (Dst_DECL, JWalker* walker, JAst* ast, JInvoke* invoke)
   g_assert (j_ast_n_children (ast) == 1);
 #endif // DEVELOPER
 
-  switch (j_ast_get_type (child))
+  switch (j_ast_get_type (ast))
     {
       case J_AST_TYPE_BUILTIN:
         {
   #if DEVELOPER == 1
+          g_assert (j_ast_get_type (child) == J_AST_TYPE_DATA);
           g_assert (j_ast_n_children (child) == 1);
   #endif // DEVELOPER
-          JAst* data_f = j_ast_find_child (child, J_AST_TYPE_DATA);
-  #if DEVELOPER == 1
-          g_assert (data_f != NULL);
-          g_assert (j_ast_n_children (data_f) == 1);
-  #endif // DEVELOPER
-          JAst* data_b = j_ast_get_first_child (data_f);
-
           invoke->target_type = J_INVOKE_TARGET_TYPE_BUILTIN;
-          invoke->target.builtin = (gchar*) data_b->data;
+          invoke->target.builtin = j_ast_get_first_child (child)->data;
           break;
         }
-      default:
+      case J_AST_TYPE_TARGET:
         {
           invoke->target_type = J_INVOKE_TARGET_TYPE_REGULAR;
           walk_argument (Dst, walker, child, & invoke->target);
           break;
         }
+      default: g_assert_not_reached ();
     }
 }

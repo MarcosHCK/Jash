@@ -48,15 +48,7 @@
 |.define c_arg4, r9
 |.endif
 #else // !__CODEGEN__
-# define DASM_MAXSECTION (0)
 # define globl_entry (J_CONTEXT_LABEL_MAIN)
-# define globl___aux_start (0)
-# define globl___code_start (0)
-# define globl___data_start (0)
-# define globl___code_end (0)
-# define globl___aux_end (0)
-# define globl___data_end (0)
-# define globl__MAX (0)
 static const unsigned char actions[];
 static const char* const globl_names[];
 static const char* const extern_names[];
@@ -75,6 +67,8 @@ typedef union _JInvokeStdfile JInvokeStdfile;
   )
 
 static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
+static void emit_invoke_child_side_builtin (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
+static void emit_invoke_child_side_regular (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc);
 static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
@@ -98,52 +92,6 @@ void j_context_complete (Dst_DECL)
 
   j_context_complete_common (Dst);
 }
-
-#if DEVELOPER == 1
-
-void j_context_debug_build (Dst_DECL)
-{
-  JGdbSection* aux = NULL;
-  gpointer aux_start = Dst->labels [globl___aux_start];
-  gpointer aux_end = Dst->labels [globl___aux_end];
-  gssize aux_size = aux_end - aux_start;
-  JGdbSection* code = NULL;
-  gpointer code_start = Dst->labels [globl___code_start];
-  gpointer code_end = Dst->labels [globl___code_end];
-  gssize code_size = code_end - code_start;
-  JGdbSection* data = NULL;
-  gpointer data_start = Dst->labels [globl___data_start];
-  gpointer data_end = Dst->labels [globl___data_end];
-  gssize data_size = data_end - data_start;
-  JGdbSymbol* symbol;
-  guint i;
-
-  g_assert (aux_start < aux_end);
-  g_assert (code_start < code_end);
-  g_assert (data_start < data_end);
-
-  aux = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "aux", aux_start, aux_size);
-  code = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "code", code_start, code_size);
-  data = j_gdb_builder_decl_section_as_data (&Dst->debug_builder, "data", data_start, data_size);
-
-  for (i = 0; i < globl__MAX; ++i)
-    {
-      gpointer base = (gpointer) Dst->labels [i];
-      gpointer name = (gpointer) globl_names [i];
-
-      if (base == NULL) continue;
-      else if (aux_end >= base && base >= aux_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, aux);
-      else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
-      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
-      else g_assert_not_reached ();
-    }
-
-  j_gdb_builder_fill_section (&Dst->debug_builder, aux_start, aux_size, aux);
-  j_gdb_builder_fill_section (&Dst->debug_builder, code_start, code_size, code);
-  j_gdb_builder_fill_section (&Dst->debug_builder, data_start, data_size, data);
-}
-
-#endif // DEVELOPER
 
 void j_context_emit (Dst_DECL, JWalker* walker)
 {
@@ -263,6 +211,7 @@ void j_context_emit (Dst_DECL, JWalker* walker)
     }
 
 #if __CODEGEN__
+  |9:
   | mov rax, Self
   | leave
   | lea rcx, [=>(Dst->nextstage)]
@@ -331,10 +280,7 @@ static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, 
 #endif // __CODEGEN__
 
   if (invoke->target_type == J_INVOKE_TARGET_TYPE_BUILTIN)
-    {
-      ++first_arg;
-      g_assert_not_reached ();
-    }
+    ++first_arg;
 
   for (i = first_arg; i < n_arguments; ++i)
     {
@@ -370,6 +316,35 @@ static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, 
       | lea c_arg2, [rsp]
       | call ->execvp_s
       || j_context_symbol_once (Dst, execvp_s);
+#endif // __CODEGEN__
+    }
+  else
+    {
+      const gchar* value = invoke->target.builtin;
+      const guint count = invoke->n_arguments;
+
+#if __CODEGEN__
+      |.macro CHECK_BUILTIN, name
+      ||if (value == j_token_builtin_ .. name .. _intern_string ())
+      ||{
+        | lea c_arg1, [rsp]
+        | mov c_arg2, (count)
+        | sub rsp, (#gpointer)
+        | lea c_arg3, [rsp]
+        | call extern j_extern_builtin_ .. name
+        | mov rax, [rsp]
+        | test rax, rax
+        | jz >1
+        | mov c_arg1, Error
+        | mov c_arg2, rax
+        | call extern g_propagate_error
+      ||} else
+      |.endmacro
+      | CHECK_BUILTIN, again
+      | CHECK_BUILTIN, help
+      | CHECK_BUILTIN, history
+      | CHECK_BUILTIN, jobs
+      || g_assert_not_reached ();
 #endif // __CODEGEN__
     }
 }
@@ -458,17 +433,16 @@ static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* argu
 {
   /* do fork */
 #if __CODEGEN__
-  |9:
   | call ->fork_s
   || j_context_symbol_once (Dst, fork_s);
   | test rax, rax
-  | jnz >9
+  | jnz >8
 #endif // __CODEGEN__
 
   emit_invoke_child_side (Dst, walker, invoke, arguments, expansions);
 
 #if __CODEGEN__
-  |9:
+  |8:
 #endif // __CODEGEN__
 
   emit_invoke_parent_side (Dst, walker, invoke, arguments, expansions);
@@ -498,7 +472,7 @@ return pc;
 }
 
 #if __CODEGEN__
-|.macro GROUP1_ONCE_FUNC, dy_name
+|.macro SYSCALL_WRAP_FUNC, dy_name
 ||static const gchar __ .. dy_name .. _fail__ [] = " .. dy_name .. ()!";
 ||static void emit_symbol_once_ .. dy_name .. _s (Dst_DECL)
 ||{
@@ -517,10 +491,11 @@ return pc;
   |.code
 ||}
 |.endmacro
-| GROUP1_ONCE_FUNC close
-| GROUP1_ONCE_FUNC dup2
-| GROUP1_ONCE_FUNC execvp
-| GROUP1_ONCE_FUNC fork
-| GROUP1_ONCE_FUNC open
-| GROUP1_ONCE_FUNC pipe
+
+| SYSCALL_WRAP_FUNC close
+| SYSCALL_WRAP_FUNC dup2
+| SYSCALL_WRAP_FUNC execvp
+| SYSCALL_WRAP_FUNC fork
+| SYSCALL_WRAP_FUNC open
+| SYSCALL_WRAP_FUNC pipe
 #endif // __CODEGEN__

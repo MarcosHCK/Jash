@@ -37,6 +37,12 @@ typedef gint JPipe [2];
 #else
 # define DASM_MAXSECTION (0)
 # define globl_entry (J_CONTEXT_LABEL_MAIN)
+# define globl___aux_start (0)
+# define globl___code_start (0)
+# define globl___data_start (0)
+# define globl___code_end (0)
+# define globl___aux_end (0)
+# define globl___data_end (0)
 # define globl__MAX (0)
 static const char* const globl_names [];
 static const char* const extern_names [];
@@ -101,3 +107,49 @@ static inline void j_context_complete_common (Dst_DECL)
   |->__data_end:
 #endif // __CODEGEN__
 }
+
+#if DEVELOPER == 1
+
+void j_context_debug_build (Dst_DECL)
+{
+  JGdbSection* aux = NULL;
+  gpointer aux_start = Dst->labels [globl___aux_start];
+  gpointer aux_end = Dst->labels [globl___aux_end];
+  gssize aux_size = aux_end - aux_start;
+  JGdbSection* code = NULL;
+  gpointer code_start = Dst->labels [globl___code_start];
+  gpointer code_end = Dst->labels [globl___code_end];
+  gssize code_size = code_end - code_start;
+  JGdbSection* data = NULL;
+  gpointer data_start = Dst->labels [globl___data_start];
+  gpointer data_end = Dst->labels [globl___data_end];
+  gssize data_size = data_end - data_start;
+  JGdbSymbol* symbol;
+  guint i;
+
+  g_assert (aux_start < aux_end);
+  g_assert (code_start < code_end);
+  g_assert (data_start < data_end);
+
+  aux = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "aux", aux_start, aux_size);
+  code = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "code", code_start, code_size);
+  data = j_gdb_builder_decl_section_as_data (&Dst->debug_builder, "data", data_start, data_size);
+
+  for (i = 0; i < globl__MAX; ++i)
+    {
+      gpointer base = (gpointer) Dst->labels [i];
+      gpointer name = (gpointer) globl_names [i];
+
+      if (base == NULL) continue;
+      else if (aux_end >= base && base >= aux_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, aux);
+      else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
+      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
+      else g_assert_not_reached ();
+    }
+
+  j_gdb_builder_fill_section (&Dst->debug_builder, aux_start, aux_size, aux);
+  j_gdb_builder_fill_section (&Dst->debug_builder, code_start, code_size, code);
+  j_gdb_builder_fill_section (&Dst->debug_builder, data_start, data_size, data);
+}
+
+#endif // DEVELOPER

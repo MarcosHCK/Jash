@@ -55,9 +55,10 @@ execvp, J_CALLBACK (execvp)
 exit, J_CALLBACK (exit)
 fail, J_CALLBACK (fail)
 fork, J_CALLBACK (fork)
+g_propagate_error, J_CALLBACK (g_propagate_error)
+g_queue_push_head, J_CALLBACK (g_queue_push_head)
 open, J_CALLBACK (open)
 pipe, J_CALLBACK (pipe)
-g_queue_push_head, J_CALLBACK (g_queue_push_head)
 %%
 
 static void throw_runtime_error_fork (GError** error)
