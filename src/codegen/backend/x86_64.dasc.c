@@ -66,18 +66,41 @@ typedef union _JInvokeStdfile JInvokeStdfile;
     + sizeof (gpointer) /* error */ \
   )
 
+#if __CODEGEN__
+|.macro SYSCALL_WRAP_FUNC, dy_name
+||static const gchar __ .. dy_name .. _fail__ [] = " .. dy_name .. ()!";
+||static inline void emit_symbol_once_ .. dy_name .. _s (Dst_DECL)
+||{
+  |.aux
+  |->dy_name .. _s:
+  | call extern dy_name
+  | test eax, eax
+  | js >1
+  | ret
+  |1:
+  | lea c_arg1, [->__ .. dy_name .. _fail__]
+  | call extern fail
+  |.data
+  |->__ .. dy_name .. _fail__:
+|| j_context_store (Dst, __ .. dy_name .. _fail__, G_N_ELEMENTS (__ .. dy_name .. _fail__));
+  |.code
+||}
+|.endmacro
+
+| SYSCALL_WRAP_FUNC close
+| SYSCALL_WRAP_FUNC dup2
+| SYSCALL_WRAP_FUNC execvp
+| SYSCALL_WRAP_FUNC fork
+| SYSCALL_WRAP_FUNC open
+| SYSCALL_WRAP_FUNC pipe
+#endif // __CODEGEN__
+
+static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_child_side_builtin (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_child_side_regular (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
 static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc);
-static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_symbol_once_close_s (Dst_DECL);
-static void emit_symbol_once_dup2_s (Dst_DECL);
-static void emit_symbol_once_execvp_s (Dst_DECL);
-static void emit_symbol_once_fork_s (Dst_DECL);
-static void emit_symbol_once_open_s (Dst_DECL);
-static void emit_symbol_once_pipe_s (Dst_DECL);
 static gint take_string (Dst_DECL, gconstpointer data, gsize length);
 G_STATIC_ASSERT (J_CONTEXT_LABEL_MAIN == globl_entry);
 
@@ -162,7 +185,7 @@ void j_context_emit (Dst_DECL, JWalker* walker)
           {
 #if __CODEGEN__
             | movsxd c_arg1, dword JPipe:rbx [i] [j]
-            | call ->close_0
+            | call ->close_s
 #endif // __CODEGEN__   
           }
         }
@@ -170,13 +193,6 @@ void j_context_emit (Dst_DECL, JWalker* walker)
       | pop rbx
       | ret
       || j_context_symbol_once (Dst, close_s);
-      |.aux
-      |->close_0:
-      | test c_arg1, c_arg1
-      | js >1
-      | call ->close_s
-      |1:
-      | ret
 #endif // __CODEGEN__
 
 #if __CODEGEN__
@@ -257,6 +273,25 @@ void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz)
       |.byte (bytes [i])
 #endif // __CODEGEN__
     }
+}
+
+static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
+{
+  /* do fork */
+#if __CODEGEN__
+  | call ->fork_s
+  || j_context_symbol_once (Dst, fork_s);
+  | test rax, rax
+  | jnz >8
+#endif // __CODEGEN__
+
+  emit_invoke_child_side (Dst, walker, invoke, arguments, expansions);
+
+#if __CODEGEN__
+  |8:
+#endif // __CODEGEN__
+
+  emit_invoke_parent_side (Dst, walker, invoke, arguments, expansions);
 }
 
 static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
@@ -397,10 +432,13 @@ static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, gui
         | mov c_arg2, (mode)
         | call ->open_s
         || j_context_symbol_once (Dst, open_s);
+        | push rax
         | mov c_arg1, rax
         | mov c_arg2, (fileno)
         | call ->dup2_s
         || j_context_symbol_once (Dst, dup2_s);
+        | pop c_arg1
+        | call ->close_s
 #endif // __CODEGEN__
         break;
       }
@@ -419,7 +457,6 @@ static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, gui
         | mov rax, Pipes
         | lea rax, JPipe:rax [desc->fd] [offset]
         | movsxd c_arg1, dword [rax]
-        | mov dword [rax], -1
         | mov c_arg2, (fileno)
         | call ->dup2_s
         || j_context_symbol_once (Dst, dup2_s);
@@ -427,25 +464,6 @@ static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, gui
         break;
       }
   }
-}
-
-static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
-{
-  /* do fork */
-#if __CODEGEN__
-  | call ->fork_s
-  || j_context_symbol_once (Dst, fork_s);
-  | test rax, rax
-  | jnz >8
-#endif // __CODEGEN__
-
-  emit_invoke_child_side (Dst, walker, invoke, arguments, expansions);
-
-#if __CODEGEN__
-  |8:
-#endif // __CODEGEN__
-
-  emit_invoke_parent_side (Dst, walker, invoke, arguments, expansions);
 }
 
 static gint take_string (Dst_DECL, gconstpointer data, gsize length)
@@ -470,32 +488,3 @@ static gint take_string (Dst_DECL, gconstpointer data, gsize length)
     }
 return pc;
 }
-
-#if __CODEGEN__
-|.macro SYSCALL_WRAP_FUNC, dy_name
-||static const gchar __ .. dy_name .. _fail__ [] = " .. dy_name .. ()!";
-||static void emit_symbol_once_ .. dy_name .. _s (Dst_DECL)
-||{
-  |.aux
-  |->dy_name .. _s:
-  | call extern dy_name
-  | test eax, eax
-  | js >1
-  | ret
-  |1:
-  | lea c_arg1, [->__ .. dy_name .. _fail__]
-  | call extern fail
-  |.data
-  |->__ .. dy_name .. _fail__:
-|| j_context_store (Dst, __ .. dy_name .. _fail__, G_N_ELEMENTS (__ .. dy_name .. _fail__));
-  |.code
-||}
-|.endmacro
-
-| SYSCALL_WRAP_FUNC close
-| SYSCALL_WRAP_FUNC dup2
-| SYSCALL_WRAP_FUNC execvp
-| SYSCALL_WRAP_FUNC fork
-| SYSCALL_WRAP_FUNC open
-| SYSCALL_WRAP_FUNC pipe
-#endif // __CODEGEN__
