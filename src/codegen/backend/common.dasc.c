@@ -49,6 +49,8 @@ static const char* const extern_names [];
 static const unsigned char actions [];
 # endif // __CODEGEN__
 
+G_STATIC_ASSERT (J_CONTEXT_FIRST_STAGE == 0);
+
 void j_context_init (Dst_DECL)
 {
   Dst->labels = g_new0 (gpointer, globl__MAX);
@@ -57,10 +59,10 @@ void j_context_init (Dst_DECL)
   Dst->nextpc = 1;
   Dst->maxpc = 2;
   Dst->expansions = g_ptr_array_new ();
-  Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
+  Dst->onces = g_hash_table_new (g_str_hash, g_str_equal);
   Dst->strtab = g_hash_table_new (g_str_hash, g_str_equal);
-
 #if DEVELOPER == 1
+  Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
   j_gdb_builder_init (&Dst->debug_builder);
 #endif // DEVELOPER
 
@@ -70,8 +72,6 @@ void j_context_init (Dst_DECL)
   dasm_growpc (Dst, Dst->maxpc);
 
 #if __CODEGEN__
-  |.code
-  |->entry:
   |.aux
   |->__aux_start:
   |.code
@@ -86,11 +86,13 @@ void j_context_clear (Dst_DECL)
 {
 #if DEVELOPER == 1
   j_gdb_builder_clear (&Dst->debug_builder);
+  g_hash_table_remove_all (Dst->symbols);
+  g_hash_table_unref (Dst->symbols);
 #endif // DEVELOPER
   g_free (Dst->labels);
   g_ptr_array_unref (Dst->expansions);
-  g_hash_table_remove_all (Dst->symbols);
-  g_hash_table_unref (Dst->symbols);
+  g_hash_table_remove_all (Dst->onces);
+  g_hash_table_unref (Dst->onces);
   g_hash_table_remove_all (Dst->strtab);
   g_hash_table_unref (Dst->strtab);
   dasm_free (Dst);
@@ -99,10 +101,10 @@ void j_context_clear (Dst_DECL)
 static inline void j_context_complete_common (Dst_DECL)
 {
 #if __CODEGEN__
-  |.code
-  |->__code_end:
   |.aux
   |->__aux_end:
+  |.code
+  |->__code_end:
   |.data
   |->__data_end:
 #endif // __CODEGEN__

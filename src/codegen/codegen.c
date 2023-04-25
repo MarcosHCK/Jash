@@ -123,29 +123,29 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
       gint status = 0;
 
       if (waitpid (pid, &status, WNOHANG) < 0)
+      {
+        int e = errno;
+        g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_RUNTIME_WAIT, g_strerror (e));
+        g_value_set_int (return_value, J_CLOSURE_STATUS_REMOVE);
+        return;
+      }
+      else
+      {
+        if (WIFEXITED (status) || WIFSIGNALED (status))
         {
-          int e = errno;
-          g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_RUNTIME_WAIT, g_strerror (e));
-          g_value_set_int (return_value, J_CLOSURE_STATUS_REMOVE);
+          GList* link = (list);
+          GList* next = (list = list->next);
+
+          g_queue_unlink (&jc->waitq, link);
+          g_list_free (link);
+          waitpid (pid, &status, 0);
+        }
+        else
+        {
+          g_value_set_int (return_value, J_CLOSURE_STATUS_CONTINUE);
           return;
         }
-      else
-        {
-          if (!(WIFEXITED (status) || WIFSIGNALED (status)))
-            {
-              g_value_set_int (return_value, J_CLOSURE_STATUS_CONTINUE);
-              return;
-            }
-          else
-            {
-              GList* link = (list);
-              GList* next = (list = list->next);
-
-              waitpid (pid, &status, 0);
-              g_queue_unlink (&jc->waitq, link);
-              g_list_free (link);
-            }
-        }
+      }
     }
 
   
@@ -236,6 +236,6 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));
 #endif // DEVELOPER
   jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
-  jc->entry = G_CALLBACK (context.labels [J_CONTEXT_LABEL_MAIN]);
+  jc->entry = dasm_getpclabel (&context, J_CONTEXT_FIRST_STAGE) + j_block_ptr (&jc->block);
 return (j_block_protect (&jc->block), j_context_clear (&context), gc);
 }

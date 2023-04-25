@@ -86,6 +86,7 @@ jash_LDADD=\
 codegen_liba_la_SOURCES=\
 	codegen/backend/${target_cpu}.c \
 	codegen/block.c \
+	codegen/builtin.c \
 	codegen/codegen.c \
 	codegen/extern.c \
 	codegen/generate.c \

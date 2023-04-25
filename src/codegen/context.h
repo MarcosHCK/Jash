@@ -57,7 +57,7 @@ typedef void (*JCallback) ();
 #define DASM_M_FREE(ctx, p, sz) g_free (p)
 #include <dynasm/dasm_proto.h>
 
-#define J_CONTEXT_LABEL_MAIN (0)
+#define J_CONTEXT_FIRST_STAGE (0)
 
 #if __cplusplus
 extern "C"
@@ -76,9 +76,10 @@ extern "C"
     guint nextstage;
 
     GPtrArray* expansions;
-    GHashTable* symbols;
+    GHashTable* onces;
     GHashTable* strtab;
 #if DEVELOPER == 1
+    GHashTable* symbols;
     JGdbBuilder debug_builder;
 #endif // DEVELOPER
   };
@@ -117,6 +118,10 @@ extern "C"
   G_GNUC_INTERNAL void j_context_ljmp (Dst_DECL, gpointer address);
   G_GNUC_INTERNAL void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz);
 
+  G_GNUC_INTERNAL void j_extern_builtin_again (const gchar* const* arguments, guint n_arguments, GError** error);
+  G_GNUC_INTERNAL void j_extern_builtin_help (const gchar* const* arguments, guint n_arguments, GError** error);
+  G_GNUC_INTERNAL void j_extern_builtin_history (const gchar* const* arguments, guint n_arguments, GError** error);
+  G_GNUC_INTERNAL void j_extern_builtin_jobs (const gchar* const* arguments, guint n_arguments, GError** error);
   G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
   G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
 
@@ -134,17 +139,29 @@ extern "C"
  ; \
         __nextpc; \
       }))
-  #define j_context_symbol_once(context,name) \
+  #define j_context_once_enter(context,key,value) \
     (({ \
+        G_STATIC_ASSERT (sizeof (key) == sizeof (gpointer)); \
+        G_STATIC_ASSERT (sizeof (*value) == sizeof (gpointer)); \
         JContext* __context = ((context)); \
-        gpointer __name = G_STRINGIFY (name); \
-        gpointer __value = GINT_TO_POINTER (globl_##name ); \
+        gpointer __key = ((key)); \
+        gpointer* __value = ((value)); \
  ; \
-        if (!g_hash_table_contains (__context->symbols, __name)) \
-          { \
-            emit_symbol_once_##name (__context); \
-            g_hash_table_insert (__context->symbols, __name, __value); \
-          } \
+        !g_hash_table_lookup_extended (__context->onces, __key, NULL, __value); \
+      }))
+  #define j_context_once_leave(context,key,value,result) \
+    (({ \
+        G_STATIC_ASSERT (sizeof (key) == sizeof (gpointer)); \
+        G_STATIC_ASSERT (sizeof (*value) == sizeof (gpointer)); \
+        G_STATIC_ASSERT (sizeof (result) == sizeof (gpointer)); \
+        JContext* __context = ((context)); \
+        gpointer __key = ((key)); \
+        gpointer* __value = ((value)); \
+        gpointer __result = ((result)); \
+ ; \
+        G_STATIC_ASSERT (sizeof (key) == sizeof (gpointer)); \
+        g_hash_table_insert (__context->onces, __key, __result); \
+        *__value = __result; \
       }))
 
 #if __cplusplus

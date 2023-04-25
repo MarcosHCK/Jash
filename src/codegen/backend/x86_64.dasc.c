@@ -48,7 +48,7 @@
 |.define c_arg4, r9
 |.endif
 #else // !__CODEGEN__
-# define globl_entry (J_CONTEXT_LABEL_MAIN)
+#include <codegen/backend/common.dasc.c>
 static const unsigned char actions[];
 static const char* const globl_names[];
 static const char* const extern_names[];
@@ -57,57 +57,93 @@ static const char* const extern_names[];
 
 const guint j_gdb_default_arch = bfd_arch_i386;
 const guint j_gdb_default_mach = bfd_mach_x86_64;
+static guint emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
+static guint emit_string (Dst_DECL, gconstpointer data, gsize length);
 typedef union _JInvokeStdfile JInvokeStdfile;
 
-#define stacksz_r \
-  ( \
-    0 \
-    + sizeof (gpointer) /* self */ \
-    + sizeof (gpointer) /* error */ \
-  )
-
 #if __CODEGEN__
-|.macro SYSCALL_WRAP_FUNC, dy_name
-||static const gchar __ .. dy_name .. _fail__ [] = " .. dy_name .. ()!";
-||static inline void emit_symbol_once_ .. dy_name .. _s (Dst_DECL)
+|.macro pushchild, pid
+| mov c_arg2, pid
+| mov c_arg1, Self
+| lea c_arg1, JClosure:c_arg1->waitq
+| call extern g_queue_push_tail
+|.endmacro
+|.macro SYSCALL_WRAPPER_ONCE, name
+||static inline guint emit_symbol_once_ .. name (Dst_DECL) G_GNUC_CONST;
+||static inline guint emit_symbol_once_ .. name (Dst_DECL)
 ||{
-  |.aux
-  |->dy_name .. _s:
-  | call extern dy_name
-  | test eax, eax
-  | js >1
-  | ret
-  |1:
-  | lea c_arg1, [->__ .. dy_name .. _fail__]
-  | call extern fail
-  |.data
-  |->__ .. dy_name .. _fail__:
-|| j_context_store (Dst, __ .. dy_name .. _fail__, G_N_ELEMENTS (__ .. dy_name .. _fail__));
-  |.code
+||  static const gchar key [] = G_STRINGIFY ( .. name .. );
+||  static const gchar fail [] = " .. name .. ()!";
+||               gpointer value;
+||  if (j_context_once_enter (Dst, (gchar*) key, &value))
+||    {
+||      guint funcpc = j_context_allocpc (Dst);
+||      guint failpc = j_context_allocpc (Dst);
+        |.aux
+        |=>(funcpc):
+        | sub rsp, 8
+        | call extern name
+        | test rax, rax
+        | jns >1
+        | lea c_arg1, [=>(failpc)]
+        | call extern fail
+        |1:
+        | add rsp, 8
+        | ret
+        |.data
+        |=>(failpc):
+||      j_context_store (Dst, fail, sizeof (fail));
+        |.code
+||      j_context_once_leave (Dst, (gchar*) key, &value, GUINT_TO_POINTER (funcpc));
+||    }
+||return GPOINTER_TO_UINT (value);
 ||}
 |.endmacro
 
-| SYSCALL_WRAP_FUNC close
-| SYSCALL_WRAP_FUNC dup2
-| SYSCALL_WRAP_FUNC execvp
-| SYSCALL_WRAP_FUNC fork
-| SYSCALL_WRAP_FUNC open
-| SYSCALL_WRAP_FUNC pipe
-#endif // __CODEGEN__
+| SYSCALL_WRAPPER_ONCE chdir
+| SYSCALL_WRAPPER_ONCE close
+| SYSCALL_WRAPPER_ONCE dup2
+| SYSCALL_WRAPPER_ONCE execvp
+| SYSCALL_WRAPPER_ONCE fork
+| SYSCALL_WRAPPER_ONCE pipe
+| SYSCALL_WRAPPER_ONCE open
 
-static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_child_side_builtin (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_child_side_regular (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions);
-static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc);
-static gint take_string (Dst_DECL, gconstpointer data, gsize length);
-G_STATIC_ASSERT (J_CONTEXT_LABEL_MAIN == globl_entry);
+||static inline guint emit_symbol_once_close_all (Dst_DECL)
+||{
+||  static const gchar key [] = "close_all";
+||                gpointer value;
+||  if (j_context_once_enter (Dst, (gchar*) key, &value))
+||    {
+||      guint funcpc = j_context_allocpc (Dst);
+        guint closepc = emit_symbol_once_close (Dst);
+||;
+        |.aux
+        |=>(funcpc):
+        | push r12
+        | push rbx
+        | sub rsp, 8
+        | mov r12, c_arg1
+        | mov rbx, c_arg2
+        |1:
+        | mov c_arg1, [r12+rbx*4-(sizeof (int))]
+  || G_STATIC_ASSERT (sizeof (int) == 4);
+        | call =>(closepc)
+        | dec rbx
+        | jnz <1
+        | add rsp, 8
+        | pop rbx
+        | pop r12
+        | ret
+        |.code
+||      j_context_once_leave (Dst, (gchar*) key, &value, GUINT_TO_POINTER (funcpc));
+||    }
+||return GPOINTER_TO_UINT (value);
+||}
+#endif // __CODEGEN__
 
 void j_context_complete (Dst_DECL)
 {
 #if __CODEGEN__
-  |.code
   |=>(Dst->nextstage):
   | mov rax, RetRemove
   | ret
@@ -120,12 +156,11 @@ void j_context_emit (Dst_DECL, JWalker* walker)
 {
   GList* list;
   guint i;
-
-#define DECL_MIXVAR(name,ctype,pre) \
+#define DECL_VARARRAY(name,ctype,pre) \
   ctype* name = NULL; \
   ctype* name##_dyn = NULL; \
   ctype name##_stat [(pre)];
-#define INIT_MIXVAR(name,now) \
+#define INIT_VARARRAY(name,now) \
   G_STMT_START \
     { \
       gsize __now = ((now)); \
@@ -139,17 +174,18 @@ void j_context_emit (Dst_DECL, JWalker* walker)
         } \
     } \
   G_STMT_END
-#define CLEAR_MIXVAR(name) g_clear_pointer (& name##_dyn, g_free)
+#define CLEAR_VARARRAY(name) g_clear_pointer (& name##_dyn, g_free)
 
-  DECL_MIXVAR (arguments, guint, 32);
-  DECL_MIXVAR (expansions, guint, 32);
-
-  INIT_MIXVAR (arguments, g_queue_get_length (&walker->arguments));
-  INIT_MIXVAR (expansions, g_queue_get_length (&walker->expansions));
+  DECL_VARARRAY (arguments, guint, 32);
+  DECL_VARARRAY (expansions, guint, 32);
+  DECL_VARARRAY (invocations, guint, 32);
+  INIT_VARARRAY (arguments, g_queue_get_length (&walker->arguments));
+  INIT_VARARRAY (expansions, g_queue_get_length (&walker->expansions));
+  INIT_VARARRAY (invocations, g_queue_get_length (&walker->invocations));
 
   for (list = g_queue_peek_head_link (&walker->arguments), i = 0; list; list = list->next)
     {
-      arguments [i++] = take_string (Dst, list->data, strlen (list->data) + 1);
+      arguments [i++] = emit_string (Dst, list->data, strlen (list->data) + 1);
     }
 
   for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next)
@@ -158,12 +194,33 @@ void j_context_emit (Dst_DECL, JWalker* walker)
       g_ptr_array_add (Dst->expansions, list->data);
     }
 
+  for (list = g_queue_peek_head_link (&walker->invocations), i = 0; list; list = list->next)
+    {
+      invocations [i++] = emit_invoke (Dst, walker, list->data, arguments, expansions);
+    }
+
+  /*
+   * Stack:
+   * > rbp (frame pointer)
+   * > JClosure* (self : argument)
+   * > GError** (error : argument)
+   * > JPipe [walker->n_pipes] (pipes : local variable)
+   * > gchar* [invoke->n_arguments] (arguemnts : local variable)
+   */
+  guint stacksize = 0
+    + sizeof (guintptr)
+    + sizeof (JClosure*)
+    + sizeof (GError**)
+    + sizeof (JPipe*) * (walker->n_pipes > 0 ? 1 : 0)
+    + sizeof (JPipe) * (walker->n_pipes)
+  /* AMD64 System V ABI demands 16 bytes alignment */
+  ; stacksize += 16 - (stacksize % 16);
+
 #if __CODEGEN__
-  |.code
   |=>(Dst->nextstage):
   | push rbp
   | mov rbp, rsp
-  | sub rsp, stacksz_r
+  | sub rsp, (stacksize)
   | mov Self, c_arg1
   | mov Error, c_arg2
 #endif // __CODEGEN__
@@ -171,80 +228,59 @@ void j_context_emit (Dst_DECL, JWalker* walker)
   if (walker->n_pipes > 0)
     {
 #if __CODEGEN__
-      |.aux
-      |->close_all:
-      | push rbx
-      | mov rbx, c_arg1
-#endif // __CODEGEN__
-
-      for (i = 0; i < walker->n_pipes; ++i)
-        {
-          guint j;
-
-          for (j = 0; j < 2; ++j)
-          {
-#if __CODEGEN__
-            | movsxd c_arg1, dword JPipe:rbx [i] [j]
-            | call ->close_s
-#endif // __CODEGEN__   
-          }
-        }
-#if __CODEGEN__
-      | pop rbx
-      | ret
-      || j_context_symbol_once (Dst, close_s);
-#endif // __CODEGEN__
-
-#if __CODEGEN__
-      |.code
-      | sub rsp, (#gpointer + (walker->n_pipes * #JPipe))
       | mov Pipes, rsp
 #endif // __CODEGEN__
+
       for (i = 0; i < walker->n_pipes; ++i)
         {
 #if __CODEGEN__
           | mov c_arg1, Pipes
           | lea c_arg1, JPipe:c_arg1 [i]
-          | call ->pipe_s
-          || j_context_symbol_once (Dst, pipe_s);
+          | call =>(emit_symbol_once_pipe (Dst))
 #endif // __CODEGEN__
         }
     }
 
   Dst->nextstage = j_context_allocpc (Dst);
 
-  for (list = g_queue_peek_head_link (&walker->invocations); list; list = list->next)
+  for (i = 0; i < g_queue_get_length (&walker->invocations); ++i)
     {
-      emit_invoke (Dst, walker, (JInvoke*) list->data, arguments, expansions);
+#if __CODEGEN__
+      | call =>(invocations [i])
+      | mov c_arg2, rax
+      | mov rax, Self
+      | lea c_arg1, JClosure:rax->waitq
+      | call extern g_queue_push_tail
+#endif // __CODEGEN__
     }
-
   if (walker->n_pipes > 0)
     {
 #if __CODEGEN__
       | mov c_arg1, Pipes
-      | call ->close_all
+      | mov c_arg2, (walker->n_pipes * 2)
+      | call =>(emit_symbol_once_close_all (Dst))
 #endif // __CODEGEN__
     }
-
 #if __CODEGEN__
-  |9:
   | mov rax, Self
-  | leave
   | lea rcx, [=>(Dst->nextstage)]
+  | leave
   | mov JClosure:rax->entry, rcx
   | mov rax, RetContinue
   | ret
 #endif // __CODEGEN__
-  CLEAR_MIXVAR (expansions);
-  CLEAR_MIXVAR (arguments);
-#undef DECL_MIXVAR
-#undef INIT_MIXVAR
-#undef CLEAR_MIXVAR
+  CLEAR_VARARRAY (invocations);
+  CLEAR_VARARRAY (expansions);
+  CLEAR_VARARRAY (arguments);
+#undef DECL_VARARRAY
+#undef INIT_VARARRAY
+#undef CLEAR_VARARRAY
 }
 
 void j_context_ljmp (Dst_DECL, gpointer address)
 {
 #if __CODEGEN__
+  |=>(Dst->nextstage):
   | mov64 rax, ((guint64) address)
   | jmp rax
 #endif // __CODEGEN__
@@ -275,174 +311,10 @@ void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz)
     }
 }
 
-static void emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
-{
-  /* do fork */
-#if __CODEGEN__
-  | call ->fork_s
-  || j_context_symbol_once (Dst, fork_s);
-  | test rax, rax
-  | jnz >8
-#endif // __CODEGEN__
-
-  emit_invoke_child_side (Dst, walker, invoke, arguments, expansions);
-
-#if __CODEGEN__
-  |8:
-#endif // __CODEGEN__
-
-  emit_invoke_parent_side (Dst, walker, invoke, arguments, expansions);
-}
-
-static void emit_invoke_child_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
-{
-  JArgument* args = & invoke->target;
-  guint n_arguments = invoke->n_arguments + 1;
-  guint i, first_arg = 0;
-
-  emit_invoke_stdfile (Dst, walker, invoke, invoke->stdin_type, STDIN_FILENO, & invoke->stdin);
-  emit_invoke_stdfile (Dst, walker, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);
-
-  if (walker->n_pipes > 0)
-    {
-#if __CODEGEN__
-      | mov c_arg1, Pipes
-      | call ->close_all
-#endif // __CODEGEN__
-    }
-#if __CODEGEN__
-  | sub rsp, (GLIB_SIZEOF_VOID_P * (n_arguments + 1))
-#endif // __CODEGEN__
-
-  if (invoke->target_type == J_INVOKE_TARGET_TYPE_BUILTIN)
-    ++first_arg;
-
-  for (i = first_arg; i < n_arguments; ++i)
-    {
-      switch (args [i].type)
-      {
-        case J_ARGUMENT_TYPE_DATA:
-#if __CODEGEN__
-          | lea rax, [=>(arguments [args [i].index])]
-#endif // __CODEGEN__
-          break;
-        case J_ARGUMENT_TYPE_EXPANSION:
-          {
-#if __CODEGEN__
-            | mov rax, Self
-            | mov rax, JClosure:rax->expansions
-            | mov rax, gpointer:rax [expansions [args [i].index]]
-#endif // __CODEGEN__
-            break;
-          }
-      }
-#if __CODEGEN__
-      | mov gpointer:rsp [i], rax
-#endif // __CODEGEN__
-    }
-#if __CODEGEN__
-    | mov qword gpointer:rsp [n_arguments], 0
-#endif // __CODEGEN__
-
-  if (first_arg == 0)
-    {
-#if __CODEGEN__
-      | mov c_arg1, [rsp]
-      | lea c_arg2, [rsp]
-      | call ->execvp_s
-      || j_context_symbol_once (Dst, execvp_s);
-#endif // __CODEGEN__
-    }
-  else
-    {
-      const gchar* value = invoke->target.builtin;
-      const guint count = invoke->n_arguments;
-
-#if __CODEGEN__
-      |.macro CHECK_BUILTIN, name
-      ||if (value == j_token_builtin_ .. name .. _intern_string ())
-      ||{
-        | lea c_arg1, [rsp]
-        | mov c_arg2, (count)
-        | sub rsp, (#gpointer)
-        | lea c_arg3, [rsp]
-        | call extern j_extern_builtin_ .. name
-        | mov rax, [rsp]
-        | test rax, rax
-        | jz >1
-        | mov c_arg1, Error
-        | mov c_arg2, rax
-        | call extern g_propagate_error
-      ||} else
-      |.endmacro
-      | CHECK_BUILTIN, again
-      | CHECK_BUILTIN, help
-      | CHECK_BUILTIN, history
-      | CHECK_BUILTIN, jobs
-      || g_assert_not_reached ();
-#endif // __CODEGEN__
-    }
-}
-
-static void emit_invoke_parent_side (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
-{
-#if __CODEGEN__
-  | mov rcx, gpointer:rbp[-1]
-  | lea c_arg1, JClosure:rcx->waitq
-  | mov c_arg2, rax
-  | call extern g_queue_push_head
-#endif // __CODEGEN__
-}
-
-static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc)
+static void adjust_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc)
 {
   switch (type)
   {
-    case J_INVOKE_STD_FILE_TYPE_FILE:
-      if (desc->filename == NULL)
-        break;
-      else
-      {
-        const gchar* name = desc->filename;
-        const gsize length = strlen (name) + 1;
-
-        guint namepc = take_string (Dst, name, length);
-        guint mode = 0;
-
-        switch (fileno)
-          {
-            default: g_assert_not_reached ();
-            case STDIN_FILENO: mode = O_RDONLY; break;
-            case STDOUT_FILENO:
-              {
-                mode = O_WRONLY;
-                switch (invoke->stdout_mode)
-                {
-                  default: g_assert_not_reached ();
-                  case J_INVOKE_STD_FILE_MODE_APPEND: mode |= O_APPEND; break;
-                  case J_INVOKE_STD_FILE_MODE_REPLACE: mode |= O_CREAT; break;
-                }
-
-                break;
-              }
-          }
-
-#if __CODEGEN__
-        | lea c_arg1, [=>(namepc)]
-        | mov c_arg2, (mode)
-        | call ->open_s
-        || j_context_symbol_once (Dst, open_s);
-        | push rax
-        | mov c_arg1, rax
-        | mov c_arg2, (fileno)
-        | call ->dup2_s
-        || j_context_symbol_once (Dst, dup2_s);
-        | pop c_arg1
-        | call ->close_s
-#endif // __CODEGEN__
-        break;
-      }
-
     case J_INVOKE_STD_FILE_TYPE_PIPE:
       {
         guint offset;
@@ -453,20 +325,200 @@ static void emit_invoke_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, gui
             case STDOUT_FILENO: offset = 1; break;
             default: g_assert_not_reached ();
           }
+
 #if __CODEGEN__
         | mov rax, Pipes
         | lea rax, JPipe:rax [desc->fd] [offset]
         | movsxd c_arg1, dword [rax]
         | mov c_arg2, (fileno)
-        | call ->dup2_s
-        || j_context_symbol_once (Dst, dup2_s);
+        | call =>(emit_symbol_once_dup2 (Dst))
+#endif // __CODEGEN__
+        break;
+      }
+
+    case J_INVOKE_STD_FILE_TYPE_FILE:
+      if (desc->filename == NULL)
+        break;
+      else
+      {
+        const gchar* name = desc->filename;
+        const gsize length = strlen (name) + 1;
+
+        guint namepc = emit_string (Dst, name, length);
+        guint mode = 0;
+
+        switch (fileno)
+          {
+            default: g_assert_not_reached ();
+            case STDIN_FILENO: mode = O_RDONLY; break;
+            case STDOUT_FILENO: mode = O_WRONLY;
+              {
+                switch (invoke->stdout_mode)
+                {
+                  default: g_assert_not_reached ();
+                  case J_INVOKE_STD_FILE_MODE_APPEND: mode |= O_APPEND; break;
+                  case J_INVOKE_STD_FILE_MODE_REPLACE: mode |= O_CREAT; break;
+                } break;
+              }
+          }
+
+#if __CODEGEN__
+        | lea c_arg1, [=>(namepc)]
+        | mov c_arg2, (mode)
+        | call =>(emit_symbol_once_open (Dst))
+        | push rax
+        | mov c_arg1, rax
+        | mov c_arg2, (fileno)
+        | call =>(emit_symbol_once_dup2 (Dst))
+        | pop c_arg1
+        | call =>(emit_symbol_once_close (Dst))
 #endif // __CODEGEN__
         break;
       }
   }
 }
 
-static gint take_string (Dst_DECL, gconstpointer data, gsize length)
+static void adjust_iofiles (Dst_DECL, JWalker* walker, JInvoke* invoke)
+{
+  guint closeallpc = emit_symbol_once_close_all (Dst);
+  adjust_stdfile (Dst, walker, invoke, invoke->stdin_type, STDIN_FILENO, & invoke->stdin);
+  adjust_stdfile (Dst, walker, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);
+
+  if (walker->n_pipes > 0)
+    {
+#if __CODEGEN__
+      | mov c_arg1, Pipes
+      | mov c_arg2, (walker->n_pipes * 2)
+      | call =>closeallpc
+#endif // __CODEGEN__
+    }
+}
+
+enum
+{
+  REPORT_STATUS_IMMEDIATE = (1 << 0),
+  REPORT_STATUS_MESSAGE = (1 << 1),
+  REPORT_STATUS_VA_MESSAGE = (1 << 2),
+};
+
+static guint emit_invoke (Dst_DECL, JWalker* walker, JInvoke* invoke, guint* arguments, guint* expansions)
+{
+  guint invokepc = j_context_allocpc (Dst);
+  guint forkpc = emit_symbol_once_fork (Dst);
+  gboolean report = FALSE;
+
+#if __CODEGEN__
+  |=>(invokepc):
+  | sub rsp, (8 /* Respect alignment */)
+  |.macro loadarg, register, index_
+  ||  G_STMT_START
+  ||  {
+  ||    const JArgument* args = & invoke->target;
+  ||    const JArgument* arg = & args [index_];
+  ||
+  ||    switch (arg->type)
+  ||    {
+  ||      case J_ARGUMENT_TYPE_DATA:
+  ||        {
+  |           lea register, [=>(arguments [arg->index])]
+  ||          break;
+  ||        }
+  ||      case J_ARGUMENT_TYPE_EXPANSION:
+  ||        {
+  |           mov register, Self
+  |           mov register, JClosure:register->expansions
+  |           mov register, gpointer:register [expansions [arg->index]]
+  ||          break;
+  ||        }
+  ||    }
+  ||  }
+  ||  G_STMT_END;
+  |.endmacro
+#endif // __CODEGEN__
+
+  if (invoke->target_type == J_INVOKE_TARGET_TYPE_BUILTIN)
+    {
+      const gchar* value = invoke->target.builtin;
+
+      if (value == J_TOKEN_BUILTIN_CD)
+        {
+          if (invoke->n_arguments > 1)
+            g_assert_not_reached ();
+          else if (invoke->n_arguments != 1)
+            report = TRUE;
+          else
+          {
+#if __CODEGEN__
+            | loadarg c_arg1, 1
+            | call extern j_chdir
+            | mov [rsp], rax
+            |1:
+#endif // __CODEGEN__
+            report = TRUE;
+          }
+        }
+    }
+
+  /* do fork */
+#if __CODEGEN__
+  | call =>forkpc
+  | test rax, rax
+  | jz >1
+  | add rsp, 8
+  | ret
+  |1:
+#endif // __CODEGEN__
+
+  adjust_iofiles (Dst, walker, invoke);
+
+  if (report == TRUE)
+    {
+#if __CODEGEN__
+      | mov c_arg1, [rsp]
+      | call extern exit
+#endif // __CODEGEN__
+      return invokepc;
+    }
+  else
+    {
+      JArgument* args = & invoke->target;
+      guint n_arguments = invoke->n_arguments + 1;
+      guint stacksize = sizeof (gchar*) * (n_arguments + 1);
+          stacksize += 16 - (stacksize % 16);
+      guint i = 0;
+
+#if __CODEGEN__
+      | sub rsp, (stacksize)
+#endif // __CODEGEN__
+
+      for (i = (invoke->target_type == J_INVOKE_TARGET_TYPE_BUILTIN ? 1 : 0); i < n_arguments; ++i)
+        {
+#if __CODEGEN__
+          | loadarg rax, i
+          | mov gpointer:rsp [i], rax
+#endif // __CODEGEN__
+        }
+#if __CODEGEN__
+        | mov qword gpointer:rsp [n_arguments], 0
+#endif // __CODEGEN__
+
+      if (invoke->target_type == J_INVOKE_TARGET_TYPE_REGULAR)
+        {
+#if __CODEGEN__
+          | mov c_arg1, [rsp]
+          | lea c_arg2, [rsp]
+          | call =>(emit_symbol_once_execvp (Dst))
+#endif // __CODEGEN__
+        }
+      else
+        {
+          g_assert_not_reached ();
+        }
+    }
+return invokepc;
+}
+
+static guint emit_string (Dst_DECL, gconstpointer data, gsize length)
 {
   gpointer lpc = NULL;
   guint pc = 0;

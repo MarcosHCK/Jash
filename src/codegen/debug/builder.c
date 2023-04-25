@@ -18,12 +18,7 @@
 #include <config.h>
 #include <bfd.h>
 #include <codegen/debug/gdb.h>
-#include <fcntl.h>
 #include <glib.h>
-#include <glib/gstdio.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 
 G_GNUC_INTERNAL JGdb* _j_gdb_new (GBytes* bytes);
 #define builder_abfd(builder) (G_STRUCT_MEMBER (bfd*, ((builder)), G_STRUCT_OFFSET (JGdbBuilder, _private1_)))
@@ -127,8 +122,6 @@ JGdbSymbol* j_gdb_builder_decl_function (JGdbBuilder* builder, const gchar* name
   sym->name = ((led = bfd_get_symbol_leading_char (abfd)) == 0) ? bfd_strdup (abfd, name) : bfd_strdup_printf (abfd, "%c%s", led, name);
   sym->section = & G_STRUCT_MEMBER (asection, section, 0);
   sym->value = GPOINTER_TO_UINT (address - G_STRUCT_MEMBER (bfd_vma, section, G_STRUCT_OFFSET (asection, vma)));
-  bfd_print_symbol (abfd, stdout, sym, bfd_print_symbol_all);
-  g_fprintf (stdout, "\n");
 return (g_ptr_array_add (symbols, sym), (JGdbSymbol*) sym);
 }
 
