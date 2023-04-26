@@ -19,26 +19,6 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 
-void j_extern_builtin_again (const gchar* const* arguments, guint n_arguments, GError** error)
-{
-  exit (23);
-}
-
-void j_extern_builtin_help (const gchar* const* arguments, guint n_arguments, GError** error)
-{
-  exit (23);
-}
-
-void j_extern_builtin_history (const gchar* const* arguments, guint n_arguments, GError** error)
-{
-  exit (23);
-}
-
-void j_extern_builtin_jobs (const gchar* const* arguments, guint n_arguments, GError** error)
-{
-  exit (23);
-}
-
 void j_set_closure_error_exit (GError** error, int value)
 {
   GValue* error_value;

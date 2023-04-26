@@ -18,6 +18,7 @@
 #ifndef __JASH_CODEGEN_CONTEXT__
 #define __JASH_CODEGEN_CONTEXT__ 1
 #include <codegen/block.h>
+#include <codegen/branch.h>
 #include <codegen/codegen.h>
 
 typedef struct _JContext JContext;
@@ -73,7 +74,6 @@ extern "C"
   
     guint maxpc;
     guint nextpc;
-    guint nextstage;
 
     GPtrArray* expansions;
     GHashTable* onces;
@@ -108,21 +108,22 @@ extern "C"
     JCallback address;
   };
 
+  G_GNUC_INTERNAL void j_branch_init (Dst_DECL, JBranch* branch, JBranchType type);
+
   G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
   G_GNUC_INTERNAL void j_context_complete (Dst_DECL);
 #if DEVELOPER == 1
   G_GNUC_INTERNAL void j_context_debug_build (Dst_DECL);
 #endif // DEVELOPER
-  G_GNUC_INTERNAL void j_context_emit (Dst_DECL, JWalker* walker);
-  G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast);
+  G_GNUC_INTERNAL void j_context_emit_chain (Dst_DECL, JWalker* walker, const JBranchChain* branch, const JBranchChain* branch_next);
+  G_GNUC_INTERNAL void j_context_emit_chain_complete (Dst_DECL, const JBranchChain* branch);
+  G_GNUC_INTERNAL void j_context_emit_chain_empty (Dst_DECL, const JBranchChain* branch, const JBranchChain* branch_next);
+  G_GNUC_INTERNAL void j_context_emit_ljmp (Dst_DECL, gpointer address, const JBranchChain* branch);
+  G_GNUC_INTERNAL void j_context_emit_test (Dst_DECL, const JBranchChain* branch, const JBranchIf* branch_next);
+  G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast, const JBranchChain* branch);
   G_GNUC_INTERNAL void j_context_init (Dst_DECL);
-  G_GNUC_INTERNAL void j_context_ljmp (Dst_DECL, gpointer address);
   G_GNUC_INTERNAL void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz);
 
-  G_GNUC_INTERNAL void j_extern_builtin_again (const gchar* const* arguments, guint n_arguments, GError** error);
-  G_GNUC_INTERNAL void j_extern_builtin_help (const gchar* const* arguments, guint n_arguments, GError** error);
-  G_GNUC_INTERNAL void j_extern_builtin_history (const gchar* const* arguments, guint n_arguments, GError** error);
-  G_GNUC_INTERNAL void j_extern_builtin_jobs (const gchar* const* arguments, guint n_arguments, GError** error);
   G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
   G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
 

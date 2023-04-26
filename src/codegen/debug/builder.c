@@ -20,6 +20,11 @@
 #include <codegen/debug/gdb.h>
 #include <glib.h>
 
+# define OUTPUT_ON_FILE (0)
+#if OUTPUT_ON_FILE
+# define OUTPUT_FILE "closure_gdb"
+#endif // OUTPUT_ON_FILE
+
 G_GNUC_INTERNAL JGdb* _j_gdb_new (GBytes* bytes);
 #define builder_abfd(builder) (G_STRUCT_MEMBER (bfd*, ((builder)), G_STRUCT_OFFSET (JGdbBuilder, _private1_)))
 #define builder_symbols(builder) (G_STRUCT_MEMBER (GPtrArray*, ((builder)), G_STRUCT_OFFSET (JGdbBuilder, _private2_)))
@@ -73,7 +78,11 @@ return (va_end (l), va_end (l2), value);
 
 void j_gdb_builder_init (JGdbBuilder* builder)
 {
+#if OUTPUT_ON_FILE
+  builder_abfd (builder) = bfd_openw (OUTPUT_FILE, "default");
+#else // OUTPUT_ON_FILE
   builder_abfd (builder) = bfd_create ("(stdin)", bfd_get_template ());
+#endif // OUTPUT_ON_FILE
   builder_symbols (builder) = g_ptr_array_new ();
 
   if (G_UNLIKELY (builder_abfd (builder) == NULL))
@@ -83,8 +92,13 @@ void j_gdb_builder_init (JGdbBuilder* builder)
   const flagword file_flags = D_PAGED | HAS_DEBUG | HAS_LOCALS | HAS_SYMS | WP_TEXT;
   const flagword applicable_flags = file_flags & bfd_applicable_file_flags (abfd);
 
+#if OUTPUT_ON_FILE
+  if (!bfd_set_format (abfd, bfd_object))
+    g_error ("(" G_STRLOC "): bfd_set_format ()!: %s", bfd_lasterr ());
+#else // OUTPUT_ON_FILE
   if (!bfd_make_writable (abfd))
     g_error ("(" G_STRLOC "): bfd_make_writable ()!: %s", bfd_lasterr ());
+#endif // OUTPUT_ON_FILE
   if (!bfd_set_arch_mach (abfd, j_gdb_default_arch, j_gdb_default_mach))
     g_error ("(" G_STRLOC "): bfd_set_arch_mach ()!: %s", bfd_lasterr ());
   if (!bfd_set_file_flags (abfd, applicable_flags))

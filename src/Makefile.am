@@ -34,6 +34,7 @@ noinst_LTLIBRARIES=\
 
 noinst_HEADERS=\
 	codegen/block.h \
+	codegen/branch.h \
 	codegen/codegen.h \
 	codegen/context.h \
 	codegen/debug/gdb.h \
@@ -86,6 +87,7 @@ jash_LDADD=\
 codegen_liba_la_SOURCES=\
 	codegen/backend/${target_cpu}.c \
 	codegen/block.c \
+	codegen/branch.c \
 	codegen/builtin.c \
 	codegen/codegen.c \
 	codegen/extern.c \

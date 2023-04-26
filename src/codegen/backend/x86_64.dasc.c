@@ -131,15 +131,7 @@
 ||    }
 ||return GPOINTER_TO_UINT (value);
 ||}
-|
-||void j_context_complete (Dst_DECL)
-||{
-|=>(Dst->nextstage):
-|   mov rax, RetRemove
-|   ret
-||  j_context_complete_common (Dst);
-||}
-|
+||
 ||static guint emit_string (Dst_DECL, gconstpointer data, gsize length)
 ||{
 ||  gpointer lpc = NULL;
@@ -158,7 +150,7 @@
 ||    }
 ||return pc;
 ||}
-|
+||
 ||static void adjust_stdfile (Dst_DECL, JWalker* walker, JInvoke* invoke, guint type, guint fileno, JInvokeStdfile* desc)
 ||{
 ||  switch (type)
@@ -202,7 +194,7 @@
 |       call =>(emit_symbol_once_close (Dst))
 ||       break;
 ||    }
-|
+||
 ||    case J_INVOKE_STD_FILE_TYPE_PIPE:
 ||    {
 ||      guint offset;
@@ -223,14 +215,14 @@
 ||    }
 ||  }
 ||}
-|
-||void j_context_emit (Dst_DECL, JWalker* walker)
+||
+||void j_context_emit_chain (Dst_DECL, JWalker* walker, const JBranchChain* branch, const JBranchChain* branch_next)
 ||{
-||#define DECL_VARARRAY(name,ctype,pre) \
+#define DECL_VARARRAY(name,ctype,pre) \
 ||  ctype* name = NULL; \
 ||  ctype* name##_dyn = NULL; \
 ||  ctype name##_stat [(pre)];
-||#define INIT_VARARRAY(name,now) \
+#define INIT_VARARRAY(name,now) \
 ||  G_STMT_START \
 ||    { \
 ||      gsize __now = ((now)); \
@@ -244,7 +236,7 @@
 ||        } \
 ||    } \
 ||  G_STMT_END
-||#define CLEAR_VARARRAY(name) g_clear_pointer (& name##_dyn, g_free)
+#define CLEAR_VARARRAY(name) g_clear_pointer (& name##_dyn, g_free)
 ||
 ||  DECL_VARARRAY (arguments, guint, 32);
 ||  DECL_VARARRAY (expansions, guint, 32);
@@ -283,19 +275,19 @@
 ||    + sizeof (JPipe) * (walker->n_pipes)
 ||  /* AMD64 System V ABI demands 16 bytes alignment */
 ||  ; stacksize += 16 - (stacksize % 16);
-|
-|=>(Dst->nextstage):
+||
+|=>(branch->directpc):
 |   push rbp
 |   mov rbp, rsp
 |   sub rsp, (stacksize)
 |   mov Self, c_arg1
 |   mov Error, c_arg2
 |   mov qword Tmperr, 0
-|
+||
 ||  if (walker->n_pipes > 0)
 ||  {
 |     mov Pipes, rsp
-|
+||
 ||    for (i = 0; i < walker->n_pipes; ++i)
 ||    {
 |       mov c_arg1, Pipes
@@ -303,13 +295,11 @@
 |       call =>(emit_symbol_once_pipe (Dst))
 ||    }
 ||  }
-|
-||  Dst->nextstage = j_context_allocpc (Dst);
-|
+||
 ||  for (i = 0; i < g_queue_get_length (&walker->invocations); ++i)
 ||    {
 ||      invocations [i] = j_context_allocpc (Dst);
-|
+||
 |       mov c_arg1, Self
 |       mov c_arg2, Pipes
 |       lea c_arg3, Tmperr
@@ -329,22 +319,25 @@
 |       lea c_arg1, JClosure:rax->waitq
 |       call extern g_queue_push_tail
 ||    }
-|
+||
 ||  if (walker->n_pipes > 0)
 ||    {
 |       mov c_arg1, Pipes
 |       mov c_arg2, (walker->n_pipes)
 |       call =>(emit_symbol_once_close_pipes (Dst))
 ||    }
-|
+||
+|.macro pushstage, self, nextpc
+|   lea rax, [=>(nextpc)]
+|   mov JClosure:self->entry, rax
+|.endmacro
 | 2:
-|   mov rax, Self
-|   lea rcx, [=>(Dst->nextstage)]
+|   mov rcx, Self
+|   pushstage rcx, branch_next->directpc
 |   leave
-|   mov JClosure:rax->entry, rcx
 |   mov rax, RetContinue
 |   ret
-|
+||
 |.macro adjustio
 ||  adjust_stdfile (Dst, walker, invoke, invoke->stdin_type, STDIN_FILENO, & invoke->stdin);
 ||  adjust_stdfile (Dst, walker, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);
@@ -394,9 +387,9 @@
 ||  guint stacksize_ = (n_arguments + 1) * sizeof (gchar*);
 ||    stacksize_ += 16 - (stacksize_ % 16);
 ||  guint i_;
-|
+||
 |   sub rsp, (stacksize_)
-|
+||
 ||  for (i_ = 0; i_ < n_arguments; ++i_)
 ||    {
 |       loadarg rax, i_
@@ -404,20 +397,20 @@
 ||    }
 |   mov qword gpointer:rsp [n_arguments], 0
 |.endmacro
-|
+||
 ||for (list = g_queue_peek_head_link (&walker->invocations), i = 0; list; list = list->next, ++i)
 ||  {
 ||    JInvoke* invoke = list->data;
 |=>(invocations [i]):
-    /* Keep stack 16 bytes aligned */
+||  /* Keep stack 16 bytes aligned */
 |     push rbp
 |     mov rbp, rsp
-    /* Allocate an extra pointer in behalf of alignment */
+||  /* Allocate an extra pointer in behalf of alignment */
 |     sub rsp, #gpointer * 4
 |     mov Self, c_arg1
 |     mov Pipes, c_arg2
 |     mov Error, c_arg3
-|
+||
 ||    if (invoke->target_type == J_INVOKE_TARGET_TYPE_REGULAR)
 ||      {
 |         splitadjust
@@ -500,14 +493,50 @@
 #undef INIT_VARARRAY
 #undef CLEAR_VARARRAY
 ||}
-|
-||void j_context_ljmp (Dst_DECL, gpointer address)
+||
+||void j_context_emit_chain_complete (Dst_DECL, const JBranchChain* branch)
 ||{
-|=>(Dst->nextstage):
+|=>(branch->directpc):
+|   mov rax, RetRemove
+|   ret
+||}
+||
+||void j_context_emit_chain_empty (Dst_DECL, const JBranchChain* branch, const JBranchChain* branch_next)
+||{
+|=>(branch->directpc):
+|   pushstage c_arg1, branch_next->directpc
+|   mov rax, RetContinue
+|   ret
+||}
+||
+||void j_context_emit_ljmp (Dst_DECL, gpointer address, const JBranchChain* branch)
+||{
+|=>(branch->directpc):
 |   mov64 rax, ((guint64) address)
 |   jmp rax
 ||}
-|
+||
+||void j_context_emit_test (Dst_DECL, const JBranchChain* branch, const JBranchIf* branch_next)
+||{
+||  JBranch direct = {0};
+||  JBranch reverse = {0};
+||
+||  j_branch_if_get_direct (branch_next, &direct);
+||  j_branch_if_get_reverse (branch_next, &reverse);
+||
+|=>(branch->directpc):
+|   movsxd rax, dword JClosure:c_arg1->condition
+|   test rax, rax
+|   jz >1
+|   pushstage c_arg1, reverse.directpc
+|   mov rax, RetContinue
+|   ret
+| 1:
+|   pushstage c_arg1, direct.directpc
+|   mov rax, RetContinue
+|   ret
+||}
+||
 ||void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz)
 ||{
 ||  const gsize n_dwords = (bufsz / 4);
@@ -516,7 +545,7 @@
 ||
 ||  for (i = 0; i < n_dwords; i++)
 ||    {
-|     .dword (GUINT32_TO_LE (dwords [i]))
+|       .dword (GUINT32_TO_LE (dwords [i]))
 ||    }
 ||
 ||  const gsize n_bytes = (bufsz % 4);
@@ -524,7 +553,7 @@
 ||
 ||  for (i = 0; i < n_bytes; i++)
 ||    {
-|     .byte (bytes [i])
+|       .byte (bytes [i])
 ||    }
 ||}
 #endif // __CODEGEN__

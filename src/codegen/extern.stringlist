@@ -77,10 +77,6 @@ fork, J_CALLBACK (fork)
 g_propagate_error, J_CALLBACK (g_propagate_error)
 g_queue_push_head, J_CALLBACK (g_queue_push_head)
 g_queue_push_tail, J_CALLBACK (g_queue_push_tail)
-j_extern_builtin_again, J_CALLBACK (j_extern_builtin_again)
-j_extern_builtin_help, J_CALLBACK (j_extern_builtin_help)
-j_extern_builtin_history, J_CALLBACK (j_extern_builtin_history)
-j_extern_builtin_jobs, J_CALLBACK (j_extern_builtin_jobs)
 j_set_closure_error_exit, J_CALLBACK (j_set_closure_error_exit)
 j_fail_with_errno, J_CALLBACK (j_fail_with_errno)
 j_get_errno, J_CALLBACK (j_get_errno)
@@ -139,10 +135,11 @@ static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, 
   if ((block = g_hash_table_lookup (table, callback)) == NULL)
     {
       JContext context = {0};
+      JBranchChain branch = {0};
       gint entry;
 
       j_context_init (&context);
-      j_context_ljmp (&context, callback);
+      j_context_emit_ljmp (&context, callback, &branch);
 
       if ((result = dasm_link (&context, &sz)), G_UNLIKELY (result != 0))
         g_error ("(" G_STRLOC "): dasm_link ()!");
@@ -152,7 +149,7 @@ static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, 
       if ((result = dasm_encode (&context, j_block_ptr (block))), G_UNLIKELY (result != 0))
         g_error ("(" G_STRLOC "): dasm_encode ()!");
 
-      if ((entry = dasm_getpclabel (&context, J_CONTEXT_FIRST_STAGE)), G_UNLIKELY (entry != 0))
+      if ((entry = dasm_getpclabel (&context, branch.directpc)), G_UNLIKELY (entry != 0))
         g_error ("(" G_STRLOC "): WTF?");
 
       g_hash_table_insert (table, callback, block);

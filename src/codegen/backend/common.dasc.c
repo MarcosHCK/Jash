@@ -35,13 +35,12 @@
 |
 ||typedef gint JPipe [2];
 ||G_STATIC_ASSERT (J_CONTEXT_FIRST_STAGE == 0);
-|
+||
 ||void j_context_init (Dst_DECL)
 ||{
 ||  Dst->labels = g_new0 (gpointer, globl__MAX);
 ||  Dst->n_labels = globl__MAX;
-||  Dst->nextstage = 0;
-||  Dst->nextpc = 1;
+||  Dst->nextpc = 0;
 ||  Dst->maxpc = 2;
 ||  Dst->expansions = g_ptr_array_new ();
 ||  Dst->onces = g_hash_table_new (g_str_hash, g_str_equal);
@@ -50,12 +49,12 @@
 ||  Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
 ||  j_gdb_builder_init (&Dst->debug_builder);
 #endif // DEVELOPER
-|
+||
 ||  dasm_init (Dst, DASM_MAXSECTION);
 ||  dasm_setupglobal (Dst, Dst->labels, Dst->n_labels);
 ||  dasm_setup (Dst, actions);
 ||  dasm_growpc (Dst, Dst->maxpc);
-|
+||
 |   .aux
 |->__aux_start:
 |   .code
@@ -64,7 +63,7 @@
 |->__data_start:
 |   .code
 ||}
-|
+||
 ||void j_context_clear (Dst_DECL)
 ||{
 #if DEVELOPER == 1
@@ -81,7 +80,7 @@
 ||  dasm_free (Dst);
 ||}
 |
-||static inline void j_context_complete_common (Dst_DECL)
+||void j_context_complete (Dst_DECL)
 ||{
 #if __CODEGEN__
 |   .aux
@@ -92,9 +91,9 @@
 |->__data_end:
 #endif // __CODEGEN__
 ||}
-|
+||
 #if DEVELOPER == 1
-|
+||
 ||void j_context_debug_build (Dst_DECL)
 ||{
 ||  JGdbSection* aux = NULL;
@@ -115,27 +114,27 @@
 ||  g_assert (aux_start < aux_end);
 ||  g_assert (code_start < code_end);
 ||  g_assert (data_start < data_end);
-|
+||
 ||  aux = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "aux", aux_start, aux_size);
 ||  code = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "code", code_start, code_size);
 ||  data = j_gdb_builder_decl_section_as_data (&Dst->debug_builder, "data", data_start, data_size);
-|
+||
 ||  for (i = 0; i < globl__MAX; ++i)
 ||    {
 ||      gpointer base = (gpointer) Dst->labels [i];
 ||      gpointer name = (gpointer) globl_names [i];
-|
+||
 ||      if (base == NULL) continue;
 ||      else if (aux_end >= base && base >= aux_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, aux);
 ||      else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
 ||      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
 ||      else g_assert_not_reached ();
 ||    }
-|
+||
 ||  j_gdb_builder_fill_section (&Dst->debug_builder, aux_start, aux_size, aux);
 ||  j_gdb_builder_fill_section (&Dst->debug_builder, code_start, code_size, code);
 ||  j_gdb_builder_fill_section (&Dst->debug_builder, data_start, data_size, data);
 ||}
-|
+||
 #endif // DEVELOPER
 #endif // __CODEGEN__

@@ -16,6 +16,7 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
+#include <codegen/branch.h>
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 #if DEVELOPER == 1
@@ -169,6 +170,7 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JCodegen* self = (codegen);
   JContext context = {0};
+  JBranchChain branch = {0};
   GPtrArray* children = NULL;
   GClosure* gc = NULL;
   JClosure* jc = NULL;
@@ -179,7 +181,8 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   size_t sz = 0;
 
   j_context_init (&context);
-  j_context_generate (&context, ast);
+  j_branch_init (&context, &branch, J_BRANCH_TYPE_CHAIN);
+  j_context_generate (&context, ast, &branch);
   j_context_complete (&context);
 
   if (context.expansions->len > 0)
@@ -243,6 +246,6 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));
 #endif // DEVELOPER
   jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
-  jc->entry = dasm_getpclabel (&context, J_CONTEXT_FIRST_STAGE) + j_block_ptr (&jc->block);
+  jc->entry = dasm_getpclabel (&context, branch.directpc) + j_block_ptr (&jc->block);
 return (j_block_protect (&jc->block), j_context_clear (&context), gc);
 }
