@@ -125,6 +125,8 @@ extern "C"
   G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
   G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
 
+  G_GNUC_INTERNAL void j_set_closure_error_exit (GError** error, int value);
+
   #define J_CALLBACK(func) ((JCallback) ((func)))
 
   #define j_context_allocpc(context) \

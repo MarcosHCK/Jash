@@ -25,6 +25,7 @@
 #define J_IS_CODEGEN(obj) (G_TYPE_CHECK_INSTANCE_TYPE ((obj), J_TYPE_CODEGEN))
 typedef struct _JCodegen JCodegen;
 
+#define J_CLOSURE_ERROR (j_closure_error_quark ())
 #define J_CODEGEN_ERROR (j_codegen_error_quark ())
 
 #if __cplusplus
@@ -38,9 +39,15 @@ extern "C" {
     J_CODEGEN_ERROR_BLOCK_PROTECT,
     J_CODEGEN_ERROR_PROGRAM_ENCODE,
     J_CODEGEN_ERROR_PROGRAM_LINK,
-    J_CODEGEN_ERROR_RUNTIME_FORK,
-    J_CODEGEN_ERROR_RUNTIME_WAIT,
   } JCodegenError;
+
+  typedef enum
+  {
+    J_CLOSURE_ERROR_FAILED,
+    J_CLOSURE_ERROR_EXIT,
+    J_CLOSURE_ERROR_FORK,
+    J_CLOSURE_ERROR_WAITPID,
+  } JClosureError;
 
   typedef enum
   {
@@ -48,8 +55,9 @@ extern "C" {
     J_CLOSURE_STATUS_CONTINUE = 1,
   } JClosureStatus;
 
+  G_GNUC_INTERNAL GQuark j_closure_error_quark (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL GValue* j_closure_error_value (const GError* error);
   G_GNUC_INTERNAL GQuark j_codegen_error_quark (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL GValue* j_codegen_error_value (const GError* error);
   G_GNUC_INTERNAL GType j_codegen_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JCodegen* j_codegen_new ();
   G_GNUC_INTERNAL GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error);

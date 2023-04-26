@@ -26,30 +26,35 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
-static void fail (const gchar* fmt, ...) G_GNUC_NORETURN;
-static void fail (const gchar* fmt, ...)
+static void j_fail_with_errno (int errno_, const gchar* fmt, ...) G_GNUC_NORETURN;
+static void j_fail_with_errno (int errno_, const gchar* fmt, ...)
 {
   gchar* value;
-  gint e = errno;
+  int errval;
   va_list l;
 
   va_start (l, fmt);
+  errval = !errno_ ? errno : errno_;
   value = g_strdup_vprintf (fmt, l);
   va_end (l);
 
-  g_error ("%s (%s)", value, g_strerror (e));
+  g_error ("%s (%s)", value, g_strerror (errval));
   g_free (value);
 }
 
-static void j_chdir (const gchar* path)
+static int j_get_errno ()
 {
-  if (g_chdir (path) < 0)
-  {
-    const gint err = errno;
-    const gchar* msg = g_strerror (err);
-
-    g_printerr ("cd: %s: %s\n", path, msg);
-  }
+  /*
+   * errno could be a little tricky because
+   * on some it is defined as a function which
+   * returns a pointer, but on others (i.e Windows!!)
+   * it is defined as an extern pointer (say, an
+   * static variable with extern linkage).
+   * This changed with C11 adoption, which forces
+   * errno to be a macro which expands into a
+   * thread-local (uff) modifiable lvalue.
+   */
+  return errno;
 }
 
 G_LOCK_DEFINE_STATIC (lowtable);
@@ -68,26 +73,20 @@ chdir, J_CALLBACK (chdir)
 dup2, J_CALLBACK (dup2)
 execvp, J_CALLBACK (execvp)
 exit, J_CALLBACK (exit)
-fail, J_CALLBACK (fail)
 fork, J_CALLBACK (fork)
-g_printerr, J_CALLBACK (g_printerr)
 g_propagate_error, J_CALLBACK (g_propagate_error)
 g_queue_push_head, J_CALLBACK (g_queue_push_head)
 g_queue_push_tail, J_CALLBACK (g_queue_push_tail)
-j_chdir, J_CALLBACK (j_chdir)
 j_extern_builtin_again, J_CALLBACK (j_extern_builtin_again)
 j_extern_builtin_help, J_CALLBACK (j_extern_builtin_help)
 j_extern_builtin_history, J_CALLBACK (j_extern_builtin_history)
 j_extern_builtin_jobs, J_CALLBACK (j_extern_builtin_jobs)
+j_set_closure_error_exit, J_CALLBACK (j_set_closure_error_exit)
+j_fail_with_errno, J_CALLBACK (j_fail_with_errno)
+j_get_errno, J_CALLBACK (j_get_errno)
 open, J_CALLBACK (open)
 pipe, J_CALLBACK (pipe)
 %%
-
-static void throw_runtime_error_fork (GError** error)
-{
-  int e = errno;
-  g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_RUNTIME_FORK, g_strerror (e));
-}
 
 static void j_block_free (JBlock* block)
 {

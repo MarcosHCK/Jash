@@ -28,10 +28,10 @@
 #define J_IS_CODEGEN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_CODEGEN))
 #define J_CODEGEN_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_CODEGEN, JCodegenClass))
 typedef struct _JCodegenClass JCodegenClass;
-typedef struct _GValue JCodegenErrorPrivate;
-static void j_codegen_error_private_init (JCodegenErrorPrivate* priv);
-#define j_codegen_error_private_copy g_value_copy
-#define j_codegen_error_private_clear g_value_unset
+typedef struct _GValue JClosureErrorPrivate;
+static void j_closure_error_private_init (JClosureErrorPrivate* priv);
+#define j_closure_error_private_copy g_value_copy
+#define j_closure_error_private_clear g_value_unset
 
 struct _JCodegen
 {
@@ -46,10 +46,11 @@ struct _JCodegenClass
   GObjectClass parent;
 };
 
+G_DEFINE_EXTENDED_ERROR (JClosureError, j_closure_error);
+G_DEFINE_QUARK (j-codegen-error-quark, j_codegen_error);
 G_DEFINE_FINAL_TYPE (JCodegen, j_codegen, G_TYPE_OBJECT);
-G_DEFINE_EXTENDED_ERROR (JCodegenError, j_codegen_error);
 
-static void j_codegen_error_private_init (JCodegenErrorPrivate* priv)
+static void j_closure_error_private_init (JClosureErrorPrivate* priv)
 {
 #ifdef HAVE_MEMSET
   memset (priv, 0, sizeof (GValue));
@@ -93,9 +94,9 @@ JCodegen* j_codegen_new ()
   return g_object_new (J_TYPE_CODEGEN, NULL);
 }
 
-GValue* j_codegen_error_value (const GError* error)
+GValue* j_closure_error_value (const GError* error)
 {
-  return j_codegen_error_get_private (error);
+  return j_closure_error_get_private (error);
 }
 
 static void closure_nofity (gpointer __null__, JClosure* jc)
@@ -125,7 +126,7 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
       if (waitpid (pid, &status, WNOHANG) < 0)
       {
         int e = errno;
-        g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_RUNTIME_WAIT, g_strerror (e));
+        g_set_error_literal (error, J_CLOSURE_ERROR, J_CLOSURE_ERROR_WAITPID, g_strerror (e));
         g_value_set_int (return_value, J_CLOSURE_STATUS_REMOVE);
         return;
       }
