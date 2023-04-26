@@ -71,7 +71,7 @@
 |      =>(funcpc):
 |        sub rsp, #gpointer
 |        call extern name
-|        test rax, rax
+|        test eax, eax
 |        jns >1
 |        xor c_arg1, c_arg1
 |        lea c_arg2, [=>(failpc)]
@@ -132,20 +132,20 @@
 ||return GPOINTER_TO_UINT (value);
 ||}
 ||
-||static guint emit_string (Dst_DECL, gconstpointer data, gsize length)
+||static guint emit_string (Dst_DECL, const gchar* value)
 ||{
 ||  gpointer lpc = NULL;
 ||  guint pc = 0;
 ||
-||  if (g_hash_table_lookup_extended (Dst->strtab, data, NULL, &lpc))
+||  if (g_hash_table_lookup_extended (Dst->strtab, value, NULL, &lpc))
 ||    return GPOINTER_TO_UINT (lpc);
 ||  else
 ||    {
 ||      pc = j_context_allocpc (Dst);
 |     .data
 |     =>(pc):
-||      j_context_store (Dst, data, length);
-||      g_hash_table_insert (Dst->strtab, (gpointer) data, GUINT_TO_POINTER (pc));
+||      j_context_store (Dst, value, strlen (value) + 1);
+||      g_hash_table_insert (Dst->strtab, (gpointer) value, GUINT_TO_POINTER (pc));
 |     .code
 ||    }
 ||return pc;
@@ -159,11 +159,8 @@
 ||      if (desc->filename == NULL)
 ||        break;
 ||      else
-||    {
-||        const gchar* name = desc->filename;
-||        const gsize length = strlen (name) + 1;
-||
-||        guint namepc = emit_string (Dst, name, length);
+||      {
+||        guint namepc = emit_string (Dst, desc->filename);
 ||        guint mode = 0;
 ||
 ||        switch (fileno)
@@ -251,7 +248,7 @@
 ||
 ||  for (list = g_queue_peek_head_link (&walker->arguments), i = 0; list; list = list->next)
 ||    {
-||      arguments [i++] = emit_string (Dst, list->data, strlen (list->data) + 1);
+||      arguments [i++] = emit_string (Dst, list->data);
 ||    }
 ||
 ||  for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next)
@@ -339,15 +336,25 @@
 |   ret
 ||
 |.macro adjustio
+||G_STMT_START {
 ||  adjust_stdfile (Dst, walker, invoke, invoke->stdin_type, STDIN_FILENO, & invoke->stdin);
-||  adjust_stdfile (Dst, walker, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);
+||  adjust_stdfile (Dst, walker, invoke, invoke->stdout_type, STDOUT_FILENO, & invoke->stdout);\
 ||  guint closepipespc = emit_symbol_once_close_pipes (Dst);
+||
 ||  if (walker->n_pipes > 0)
 ||    {
 |       mov c_arg1, Pipes
 |       mov c_arg2, (walker->n_pipes)
 |       call =>(closepipespc)
 ||    }
+||} G_STMT_END;
+|.endmacro
+|.macro reportexit, error, code
+|   mov c_arg1, error
+|   mov c_arg2, code
+|   call extern j_set_closure_error_exit
+|   leave
+|   ret
 |.endmacro
 |.macro splitproc
 |   call =>(emit_symbol_once_fork (Dst))
@@ -363,6 +370,7 @@
 |.endmacro
 ||
 |.macro loadarg, register, index_
+||G_STMT_START {
 ||  const JArgument* args = & invoke->target;
 ||  const JArgument* arg = & args [index_];
 ||
@@ -381,8 +389,10 @@
 ||          break;
 ||        }
 ||    }
+||} G_STMT_END;
 |.endmacro
 |.macro loadargs
+||G_STMT_START {
 ||  guint n_arguments = (invoke->n_arguments + 1);
 ||  guint stacksize_ = (n_arguments + 1) * sizeof (gchar*);
 ||    stacksize_ += 16 - (stacksize_ % 16);
@@ -396,6 +406,7 @@
 |       mov gpointer:rsp [i_], rax
 ||    }
 |   mov qword gpointer:rsp [n_arguments], 0
+||} G_STMT_END;
 |.endmacro
 ||
 ||for (list = g_queue_peek_head_link (&walker->invocations), i = 0; list; list = list->next, ++i)
@@ -406,10 +417,11 @@
 |     push rbp
 |     mov rbp, rsp
 ||  /* Allocate an extra pointer in behalf of alignment */
-|     sub rsp, #gpointer * 4
+|     sub rsp, (stacksize)
 |     mov Self, c_arg1
-|     mov Pipes, c_arg2
 |     mov Error, c_arg3
+|     mov Pipes, c_arg2
+|     mov qword Tmperr, 0
 ||
 ||    if (invoke->target_type == J_INVOKE_TARGET_TYPE_REGULAR)
 ||      {
@@ -431,20 +443,55 @@
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_CD)
 ||          {
-||            g_assert_not_reached ();
+||            if (walker.n_pipes > 0
+||              || invoke->n_arguments == 0)
+||              {
+|                 splitadjust
+|                 reportexit Error, 0
+||              }
+||            else
+||              {
+|                 loadarg c_arg1, 1
+|                 call extern chdir
+|                 test eax, eax
+|                 js >9
+|                   splitadjust
+|                   reportexit Error, 0
+|                 9:
+|                   call extern j_get_errno
+|                   mov [rsp], rax
+|                   splitadjust
+|                   mov c_arg1, [rsp]
+|                   lea c_arg2, [=>(emit_string (Dst, "cd: %s"))]
+|                   loadarg c_arg3, 1
+|                   call extern j_fail_with_errno
+||              }
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_EXIT)
 ||          {
-||            g_assert_not_reached ();
+||            if (walker.n_pipes > 0)
+||              {
+|                 splitadjust
+|                 reportexit Error, 0
+||              }
+|             else
+||              {
+||                if (invoke->n_arguments == 0)
+||                  {
+|                     reportexit Error, 0
+||                  }
+||                else
+||                  {
+|                     leadarg c_arg1, 1
+|                     lea c_arg2, Tmperr
+|                     call extern j_ascii_parseint
+||                  }
+||              }
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_FALSE)
 ||          {
 |             splitadjust
-|             mov c_arg1, Error
-|             mov c_arg2, 1
-|             call extern j_set_closure_error_exit
-|             leave
-|             ret
+|             reportexit Error, 1
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_FG)
 ||          {
@@ -473,11 +520,7 @@
 ||        else if (value == J_TOKEN_BUILTIN_TRUE)
 ||          {
 |             splitadjust
-|             mov c_arg1, Error
-|             mov c_arg2, 0
-|             call extern j_set_closure_error_exit
-|             leave
-|             ret
+|             reportexit Error, 0
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_UNSET)
 ||          {

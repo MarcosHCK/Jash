@@ -57,6 +57,42 @@ static int j_get_errno ()
   return errno;
 }
 
+static gint detectbase (const gchar* value, const gchar** begin)
+{
+  if (g_utf8_get_char (value) == (gunichar) '-')
+    return detectbase (g_utf8_next_char (value), begin);
+  else
+    {
+      gchar* n = g_utf8_next_char (value);
+      gunichar c1 = g_utf8_get_char (value);
+      gunichar c2 = g_utf8_get_char (n);
+
+      if (c1 != (gunichar) '0')
+        return (*begin = value, 10);
+      else
+        {
+          switch (c2)
+            {
+              case (gunichar) 'b': return (*begin = g_utf8_next_char (n), 2);
+              case (gunichar) 'o': return (*begin = g_utf8_next_char (n), 8);
+              case (gunichar) 'd': return (*begin = g_utf8_next_char (n), 10);
+              case (gunichar) 'x': return (*begin = g_utf8_next_char (n), 16);
+              default: return (*begin = value, 10);
+            }
+        }
+    }
+}
+
+static gint j_ascii_parseint (const gchar* value, GError** error)
+{
+  const gchar* number = NULL;
+  const gint base = detectbase (value, &number);
+  gint64 result = -1;
+
+  g_ascii_string_to_signed (number, base, G_MININT, G_MAXINT, &result, error);
+return (gint) result;
+}
+
 G_LOCK_DEFINE_STATIC (lowtable);
 %}
 
@@ -77,6 +113,7 @@ fork, J_CALLBACK (fork)
 g_propagate_error, J_CALLBACK (g_propagate_error)
 g_queue_push_head, J_CALLBACK (g_queue_push_head)
 g_queue_push_tail, J_CALLBACK (g_queue_push_tail)
+j_ascii_parseint, J_CALLBACK (j_ascii_parseint)
 j_set_closure_error_exit, J_CALLBACK (j_set_closure_error_exit)
 j_fail_with_errno, J_CALLBACK (j_fail_with_errno)
 j_get_errno, J_CALLBACK (j_get_errno)
