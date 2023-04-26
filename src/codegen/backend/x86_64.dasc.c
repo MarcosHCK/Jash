@@ -446,8 +446,12 @@
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_FALSE)
 ||          {
+|             splitadjust
 |             mov c_arg1, Error
 |             mov c_arg2, 1
+|             call extern j_set_closure_error_exit
+|             leave
+|             ret
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_FG)
 ||          {
@@ -475,7 +479,12 @@
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_TRUE)
 ||          {
-||            g_assert_not_reached ();
+|             splitadjust
+|             mov c_arg1, Error
+|             mov c_arg2, 0
+|             call extern j_set_closure_error_exit
+|             leave
+|             ret
 ||          }
 ||        else if (value == J_TOKEN_BUILTIN_UNSET)
 ||          {

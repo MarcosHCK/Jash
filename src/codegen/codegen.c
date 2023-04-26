@@ -140,6 +140,11 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
           g_queue_unlink (&jc->waitq, link);
           g_list_free (link);
           waitpid (pid, &status, 0);
+
+          if (WEXITSTATUS (status) != 0)
+          {
+            jc->condition |= 1;
+          }
         }
         else
         {
@@ -153,6 +158,7 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
   gint (*callback) (JClosure* self, GError** error, gpointer closure_data) = jc->entry;
   gint result = callback (jc, error, gc->data);
 
+  jc->condition = 0;
   g_value_set_int (return_value, result);
 }
 

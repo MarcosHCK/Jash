@@ -29,8 +29,8 @@ extern "C" {
 #endif // __cplusplus
 
   G_GNUC_INTERNAL GType j_ash_get_type (void) G_GNUC_CONST;
-  G_GNUC_INTERNAL void j_ash_run_interactive (JAsh* jash, GError** error);
-  G_GNUC_INTERNAL void j_ash_run_script (JAsh* jash, const gchar* filename, GError** error);
+  G_GNUC_INTERNAL gint j_ash_run_interactive (JAsh* jash, GError** error);
+  G_GNUC_INTERNAL gint j_ash_run_script (JAsh* jash, const gchar* filename, GError** error);
 
 #if __cplusplus
 }

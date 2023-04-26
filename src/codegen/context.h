@@ -89,6 +89,7 @@ extern "C"
     GClosure closure;
     GQueue waitq;
     JBlock block;
+    gboolean condition;
     gpointer entry;
 #if DEVELOPER == 1
     JGdb* debug_object;
