@@ -23,23 +23,19 @@
 static void walk_argument (Dst_DECL, JWalker* walker, JAst* ast, JArgument* argument);
 static void walk_command (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe);
 static void walk_detach (Dst_DECL, JWalker* walker, JAst* ast);
-static void walk_ifclosure (Dst_DECL, JAst* ast, const JBranch* branch, const JBranch* branch_next);
+static void walk_ifclosure (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
 static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe);
 static void walk_pipe (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe);
-static void walk_scope (Dst_DECL, JAst* ast, const JBranch* branch, const JBranch* branch_next);
+static void walk_scope (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
 static void walk_target (Dst_DECL, JWalker* walker, JAst* ast, JInvoke* invoke);
 
-void j_context_generate (Dst_DECL, JAst* ast, const JBranch* branch_head)
+void j_context_generate (Dst_DECL, JAst* ast, const JTag* tag)
 {
-  JBranchChain branch_last = {0};
-#if DEVELOPER == 1
-  g_assert (j_ast_get_type (ast) == J_AST_TYPE_SCOPE);
-#endif // DEVELOPER
+  JTag tag_last = {0};
 
-  j_branch_init (Dst, &branch_last, J_BRANCH_TYPE_CHAIN);
-  walk_scope (Dst, ast, branch_head, &branch_last);
-
-  j_context_emit_chain_complete (Dst, &branch_last);
+  j_tag_init (Dst, &tag_last);
+  walk_scope (Dst, ast, tag, &tag_last);
+  j_context_emit_chain_last (Dst, &tag_last);
 }
 
 static void walk_argument (Dst_DECL, JWalker* walker, JAst* ast, JArgument* argument)
@@ -83,35 +79,28 @@ static void walk_detach (Dst_DECL, JWalker* walker, JAst* ast)
   j_walker_mark_detach (walker);
 }
 
-static void walk_ifclosure (Dst_DECL, JAst* ast, const JBranch* branch_head, const JBranch* branch_last)
+static void walk_ifclosure (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
 {
   JAst* condition = j_ast_find_child (ast, J_AST_TYPE_IFCLOSURE_CONDITION);
   JAst* direct = j_ast_find_child (ast, J_AST_TYPE_IFCLOSURE_DIRECT);
   JAst* reverse = j_ast_find_child (ast, J_AST_TYPE_IFCLOSURE_REVERSE);
-  JBranchChain branch_condition = {0};
-  JBranchChain branch_direct = {0};
-  JBranchChain branch_reverse = {0};
-  JBranchIf branch_test = {0};
+  JTag tag_condition, tag_direct, tag_reverse, tag_test;
 #if DEVELOPER == 1
   g_assert (condition != NULL);
 #endif // DEVELOPER
 
-  j_branch_init (Dst, (JBranch*) &branch_condition, J_BRANCH_TYPE_CHAIN);
-  j_branch_init (Dst, (JBranch*) &branch_test, J_BRANCH_TYPE_IF);
-  j_branch_if_get_direct (&branch_test, &branch_direct);
-  j_branch_if_get_reverse (&branch_test, &branch_reverse);
+  j_tag_init (Dst, &tag_condition);
+  j_tag_init (Dst, &tag_direct);
+  j_tag_init (Dst, &tag_reverse);
+  j_tag_init (Dst, &tag_test);
 
-  walk_scope (Dst, condition, branch_head, &branch_condition);
-  j_context_emit_test (Dst, &branch_condition, &branch_test);
+  walk_scope (Dst, condition, tag, &tag_condition);
+  j_context_emit_test (Dst, &tag_condition, &tag_direct, &tag_reverse);
 
-  if (direct != NULL)
-    walk_scope (Dst, direct, &branch_direct, branch_last);
-  else
-    j_context_emit_chain_empty (Dst, &branch_direct, branch_last);
-  if (reverse != NULL)
-    walk_scope (Dst, reverse, &branch_reverse, branch_last);
-  else
-    j_context_emit_chain_empty (Dst, &branch_reverse, branch_last);
+  if (direct != NULL) walk_scope (Dst, direct, &tag_direct, tag_next);
+  else j_context_emit_chain_empty (Dst, &tag_direct, tag_next);
+  if (reverse != NULL) walk_scope (Dst, reverse, &tag_reverse, tag_next);
+  else j_context_emit_chain_empty (Dst, &tag_reverse, tag_next);
 }
 
 static gint adjust_stdfile (union _JInvokeStdfile* file, JAst* redirect, gint pipe)
@@ -216,23 +205,23 @@ static void walk_pipe (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint 
   walk_command (Dst, walker, child2, cur_pipe, out_pipe);
 }
 
-static void walk_scope (Dst_DECL, JAst* ast, const JBranch* branch_head, const JBranch* branch_last)
+static void walk_scope (Dst_DECL, JAst* ast, const JTag* tag_head, const JTag* tag_last)
 {
   JWalker walker = J_WALKER_INIT;
-  JBranch branch = {0};
-  JBranch branch_next = {0};
+  JTag tag = {0};
+  JTag tag_next = {0};
   JAst* child = NULL;
 
-  j_branch_copy (branch_head, &branch);
+  j_tag_copy (tag_head, &tag);
 
   for (child = j_ast_get_first_child (ast);
        child;
        child = j_ast_get_next_sibling (child))
     {
       if (j_ast_get_next_sibling (child) != NULL)
-        j_branch_init (Dst, &branch_next, J_BRANCH_TYPE_CHAIN);
+        j_tag_init (Dst, &tag_next);
       else
-        j_branch_copy (branch_last, &branch_next);
+        j_tag_copy (tag_last, &tag_next);
 
       switch (j_ast_get_type (child))
         {
@@ -240,21 +229,21 @@ static void walk_scope (Dst_DECL, JAst* ast, const JBranch* branch_head, const J
             walk_detach (Dst, &walker, child);
             goto emitchain;
           case J_AST_TYPE_IFCLOSURE:
-            walk_ifclosure (Dst, child, &branch, &branch_next);
+            walk_ifclosure (Dst, child, &tag, &tag_next);
             break;
           case J_AST_TYPE_INVOKE:
           case J_AST_TYPE_PIPE:
             walk_command (Dst, &walker, child, -1, -1);
           emitchain:
             {
-              j_context_emit_chain (Dst, &walker, &branch, &branch_next);
+              j_context_emit_chain_step (Dst, &walker, &tag, &tag_next);
               j_walker_clear (&walker);
               break;
             }
           default: g_assert_not_reached ();
         }
 
-      j_branch_copy (&branch_next, &branch);
+      j_tag_copy (&tag_next, &tag);
     }
 }
 

@@ -18,23 +18,24 @@
 #ifndef __JASH_CODEGEN_CONTEXT__
 #define __JASH_CODEGEN_CONTEXT__ 1
 #include <codegen/block.h>
-#include <codegen/branch.h>
 #include <codegen/codegen.h>
+#if DEVELOPER == 1
+# include <codegen/debug/gdb.h>
+# define DASM_CHECKS
+#endif // DEVELOPER
 
+typedef void (*JCallback) ();
 typedef struct _JContext JContext;
 typedef struct _JClosure JClosure;
 typedef struct _JExtern JExtern;
+typedef const gchar JOnceID;
+typedef struct _JOnceInit JOnceInit;
+typedef gint JPipe [2];
+typedef gpointer JTag;
 typedef struct _JWalker JWalker;
-
-typedef void (*JCallback) ();
 
 #define Dst_DECL JContext* Dst
 #define Dst_REF (Dst->state)
-
-#if DEVELOPER == 1
-# define DASM_CHECKS
-# include <codegen/debug/gdb.h>
-#endif // DEVELOPER
 
 #define DASM_FDEF G_GNUC_INTERNAL
 #define DASM_EXTERN(ctx, addr, idx, type) \
@@ -58,8 +59,6 @@ typedef void (*JCallback) ();
 #define DASM_M_FREE(ctx, p, sz) g_free (p)
 #include <dynasm/dasm_proto.h>
 
-#define J_CONTEXT_FIRST_STAGE (0)
-
 #if __cplusplus
 extern "C"
 {
@@ -76,10 +75,10 @@ extern "C"
     guint nextpc;
 
     GPtrArray* expansions;
-    GHashTable* onces;
+    GHashTable* symbols;
     GHashTable* strtab;
 #if DEVELOPER == 1
-    GHashTable* symbols;
+    GHashTable* debug_info;
     JGdbBuilder debug_builder;
 #endif // DEVELOPER
   };
@@ -108,28 +107,11 @@ extern "C"
     JCallback address;
   };
 
-  G_GNUC_INTERNAL void j_branch_init (Dst_DECL, JBranch* branch, JBranchType type);
-
-  G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
-  G_GNUC_INTERNAL void j_context_complete (Dst_DECL);
-#if DEVELOPER == 1
-  G_GNUC_INTERNAL void j_context_debug_build (Dst_DECL);
-#endif // DEVELOPER
-  G_GNUC_INTERNAL void j_context_emit_chain (Dst_DECL, JWalker* walker, const JBranchChain* branch, const JBranchChain* branch_next);
-  G_GNUC_INTERNAL void j_context_emit_chain_complete (Dst_DECL, const JBranchChain* branch);
-  G_GNUC_INTERNAL void j_context_emit_chain_empty (Dst_DECL, const JBranchChain* branch, const JBranchChain* branch_next);
-  G_GNUC_INTERNAL void j_context_emit_ljmp (Dst_DECL, gpointer address, const JBranchChain* branch);
-  G_GNUC_INTERNAL void j_context_emit_test (Dst_DECL, const JBranchChain* branch, const JBranchIf* branch_next);
-  G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast, const JBranchChain* branch);
-  G_GNUC_INTERNAL void j_context_init (Dst_DECL);
-  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz);
-
-  G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
-  G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
-
-  G_GNUC_INTERNAL void j_set_closure_error_exit (GError** error, int value);
-
-  #define J_CALLBACK(func) ((JCallback) ((func)))
+  struct _JOnceInit
+  {
+    gint name;
+    void (*callback) (Dst_DECL);
+  };
 
   #define j_context_allocpc(context) \
     (({ \
@@ -143,29 +125,84 @@ extern "C"
  ; \
         __nextpc; \
       }))
-  #define j_context_once_enter(context,key,value) \
+
+  #define J_CALLBACK(func) ((JCallback) ((func)))
+
+  G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_emit_absolute_jump (Dst_DECL, gpointer address, const JTag* tag);
+#if DEVELOPER == 1
+  G_GNUC_INTERNAL void j_context_emit_debuginfo (Dst_DECL);
+#endif // DEVELOPER
+  G_GNUC_INTERNAL void j_context_emit_chain_empty (Dst_DECL, const JTag* tag, const JTag* tag_next);
+  G_GNUC_INTERNAL void j_context_emit_chain_last (Dst_DECL, const JTag* tag);
+  G_GNUC_INTERNAL void j_context_emit_chain_step (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
+  G_GNUC_INTERNAL void j_context_emit_test (Dst_DECL, const JTag* tag, const JTag* tag_direct, const JTag* tag_reverse);
+  G_GNUC_INTERNAL void j_context_finish (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast, const JTag* tag);
+  G_GNUC_INTERNAL void j_context_init (Dst_DECL);
+  G_GNUC_INTERNAL void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz);
+
+  G_GNUC_INTERNAL const JExtern* j_extern_lookup (const gchar* name, size_t length);
+  G_GNUC_INTERNAL const gint32 j_extern_search (Dst_DECL, gconstpointer address, const gchar* name, int type);
+
+  G_GNUC_INTERNAL void j_once_init (Dst_DECL, GHashTable* table, JOnceID* once, JTag* tag);
+  G_GNUC_INTERNAL void j_once_init_branch_fail (Dst_DECL);
+  G_GNUC_INTERNAL const JOnceInit* j_once_lookup (const gchar* name, size_t length);
+
+  G_GNUC_INTERNAL void j_set_closure_error_chdir (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_dup2 (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_execvp (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_exit (GError** error, int value);
+  G_GNUC_INTERNAL void j_set_closure_error_fork (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_open (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_pipe (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_waitpid (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+
+  #define j_tag_as_offset(context,src) \
     (({ \
-        G_STATIC_ASSERT (sizeof (key) == sizeof (gpointer)); \
-        G_STATIC_ASSERT (sizeof (*value) == sizeof (gpointer)); \
-        JContext* __context = ((context)); \
-        gpointer __key = ((key)); \
-        gpointer* __value = ((value)); \
- ; \
-        !g_hash_table_lookup_extended (__context->onces, __key, NULL, __value); \
+        guint __pc = j_tag_as_pc ((src)); \
+        dasm_getpclabel ((context), __pc); \
       }))
-  #define j_context_once_leave(context,key,value,result) \
+  #define j_tag_as_pc(src) \
     (({ \
-        G_STATIC_ASSERT (sizeof (key) == sizeof (gpointer)); \
-        G_STATIC_ASSERT (sizeof (*value) == sizeof (gpointer)); \
-        G_STATIC_ASSERT (sizeof (result) == sizeof (gpointer)); \
+        const JTag* __src = ((src)); \
+          GPOINTER_TO_UINT (*__src); \
+      }))
+  #define j_tag_copy(src,dst) \
+    (({ \
+        const JTag* __src = ((src)); \
+        JTag* __dst = ((dst)); \
+          *__dst = *__src; \
+      }))
+  #define j_tag_init(context,dst) \
+    (({ \
+        JTag* __dst = ((dst)); \
+        guint __pc = j_context_allocpc ((context)); \
+          *__dst = GUINT_TO_POINTER (__pc); \
+       }))
+  #define j_tag_once_symbol(context,dst,name) \
+    (({ \
         JContext* __context = ((context)); \
-        gpointer __key = ((key)); \
-        gpointer* __value = ((value)); \
-        gpointer __result = ((result)); \
- ; \
-        G_STATIC_ASSERT (sizeof (key) == sizeof (gpointer)); \
-        g_hash_table_insert (__context->onces, __key, __result); \
-        *__value = __result; \
+        JOnceID* __once = G_STRINGIFY (name); \
+        j_once_init (__context, __context->symbols, __once, (dst)); \
+      }))
+  #define j_tag_once_symbol_as_pc(context,name) \
+    (({ \
+        JTag __tag; \
+        j_tag_once_symbol ((context), &__tag, name); \
+        j_tag_as_pc (&__tag); \
+      }))
+  #define j_tag_once_string(context,dst,value) \
+    (({ \
+        JContext* __context = ((context)); \
+        JOnceID* __once = ((value)); \
+        j_once_init (__context, __context->strtab, __once, (dst)); \
+      }))
+  #define j_tag_once_string_as_pc(context,name) \
+    (({ \
+        JTag __tag; \
+        j_tag_once_string ((context), &__tag, name); \
+        j_tag_as_pc (&__tag); \
       }))
 
 #if __cplusplus

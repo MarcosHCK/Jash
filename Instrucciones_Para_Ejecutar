@@ -1,6 +1,0 @@
-Para ejecutar se debe:
-1- La primera vez:
-    1.1- ./autogen.sh
-    1.2- ./configure --enable-debug --enable-developer
-2- El resto de las veces:
-    make && src/jash

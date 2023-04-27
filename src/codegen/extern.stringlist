@@ -19,79 +19,8 @@
 #include <config.h>
 #include <codegen/codegen.h>
 #include <codegen/context.h>
-#include <codegen/system.h>
-#include <fcntl.h>
+#include <codegen/externs.h>
 #include <glib/gstdio.h>
-#include <glib-object.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-
-static void j_fail_with_errno (int errno_, const gchar* fmt, ...) G_GNUC_NORETURN;
-static void j_fail_with_errno (int errno_, const gchar* fmt, ...)
-{
-  gchar* value;
-  int errval;
-  va_list l;
-
-  va_start (l, fmt);
-  errval = !errno_ ? errno : errno_;
-  value = g_strdup_vprintf (fmt, l);
-  va_end (l);
-
-  g_error ("%s (%s)", value, g_strerror (errval));
-  g_free (value);
-}
-
-static int j_get_errno ()
-{
-  /*
-   * errno could be a little tricky because
-   * on some it is defined as a function which
-   * returns a pointer, but on others (i.e Windows!!)
-   * it is defined as an extern pointer (say, an
-   * static variable with extern linkage).
-   * This changed with C11 adoption, which forces
-   * errno to be a macro which expands into a
-   * thread-local (uff) modifiable lvalue.
-   */
-  return errno;
-}
-
-static gint detectbase (const gchar* value, const gchar** begin)
-{
-  if (g_utf8_get_char (value) == (gunichar) '-')
-    return detectbase (g_utf8_next_char (value), begin);
-  else
-    {
-      gchar* n = g_utf8_next_char (value);
-      gunichar c1 = g_utf8_get_char (value);
-      gunichar c2 = g_utf8_get_char (n);
-
-      if (c1 != (gunichar) '0')
-        return (*begin = value, 10);
-      else
-        {
-          switch (c2)
-            {
-              case (gunichar) 'b': return (*begin = g_utf8_next_char (n), 2);
-              case (gunichar) 'o': return (*begin = g_utf8_next_char (n), 8);
-              case (gunichar) 'd': return (*begin = g_utf8_next_char (n), 10);
-              case (gunichar) 'x': return (*begin = g_utf8_next_char (n), 16);
-              default: return (*begin = value, 10);
-            }
-        }
-    }
-}
-
-static gint j_ascii_parseint (const gchar* value, GError** error)
-{
-  const gchar* number = NULL;
-  const gint base = detectbase (value, &number);
-  gint64 result = -1;
-
-  g_ascii_string_to_signed (number, base, G_MININT, G_MAXINT, &result, error);
-return (gint) result;
-}
 
 G_LOCK_DEFINE_STATIC (lowtable);
 %}
@@ -104,21 +33,21 @@ G_LOCK_DEFINE_STATIC (lowtable);
 
 struct _JExtern {};
 %%
-close, J_CALLBACK (close)
-chdir, J_CALLBACK (chdir)
-dup2, J_CALLBACK (dup2)
-execvp, J_CALLBACK (execvp)
-exit, J_CALLBACK (exit)
-fork, J_CALLBACK (fork)
+g_close, J_CALLBACK (g_close)
+g_error_free, J_CALLBACK (g_error_free)
+g_malloc, J_CALLBACK (g_malloc)
 g_propagate_error, J_CALLBACK (g_propagate_error)
 g_queue_push_head, J_CALLBACK (g_queue_push_head)
 g_queue_push_tail, J_CALLBACK (g_queue_push_tail)
-j_ascii_parseint, J_CALLBACK (j_ascii_parseint)
+j_chdir, J_CALLBACK (j_chdir)
+j_dup2, J_CALLBACK (j_dup2)
+j_execvp, J_CALLBACK (j_execvp)
+j_fork, J_CALLBACK (j_fork)
+j_open, J_CALLBACK (j_open)
+j_pipe_clear_many, J_CALLBACK (j_pipe_clear_many)
+j_pipe_init_many, J_CALLBACK (j_pipe_init_many)
+j_parse_int, J_CALLBACK (j_parse_int)
 j_set_closure_error_exit, J_CALLBACK (j_set_closure_error_exit)
-j_fail_with_errno, J_CALLBACK (j_fail_with_errno)
-j_get_errno, J_CALLBACK (j_get_errno)
-open, J_CALLBACK (open)
-pipe, J_CALLBACK (pipe)
 %%
 
 static void j_block_free (JBlock* block)
@@ -172,11 +101,11 @@ static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, 
   if ((block = g_hash_table_lookup (table, callback)) == NULL)
     {
       JContext context = {0};
-      JBranchChain branch = {0};
+      JTag tag = {0};
       gint entry;
 
       j_context_init (&context);
-      j_context_emit_ljmp (&context, callback, &branch);
+      j_context_emit_absolute_jump (&context, callback, &tag);
 
       if ((result = dasm_link (&context, &sz)), G_UNLIKELY (result != 0))
         g_error ("(" G_STRLOC "): dasm_link ()!");
@@ -186,7 +115,7 @@ static inline gboolean lowget (Dst_DECL, gint32* offset, gconstpointer address, 
       if ((result = dasm_encode (&context, j_block_ptr (block))), G_UNLIKELY (result != 0))
         g_error ("(" G_STRLOC "): dasm_encode ()!");
 
-      if ((entry = dasm_getpclabel (&context, branch.directpc)), G_UNLIKELY (entry != 0))
+      if ((entry = j_tag_as_offset (&context, &tag)), G_UNLIKELY (entry != 0))
         g_error ("(" G_STRLOC "): WTF?");
 
       g_hash_table_insert (table, callback, block);

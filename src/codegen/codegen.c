@@ -16,13 +16,12 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <codegen/branch.h>
 #include <codegen/codegen.h>
 #include <codegen/context.h>
+#include <codegen/externs.h>
 #if DEVELOPER == 1
 # include <codegen/debug/gdb.h>
 #endif // DEVELOPER
-#include <errno.h>
 #include <wait.h>
 
 #define J_CODEGEN_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_CODEGEN, JCodegenClass))
@@ -117,6 +116,7 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
   g_return_if_fail (param_values != NULL);
   GClosure* gc = (gpointer) jc;
   GError** error = g_value_get_pointer (param_values);
+  GError* tmperr = NULL;
   GList* list;
 
   while ((list = g_queue_peek_head_link (&jc->waitq)) != NULL)
@@ -124,10 +124,9 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
       gint pid = GPOINTER_TO_INT (list->data);
       gint status = 0;
 
-      if (waitpid (pid, &status, WNOHANG) < 0)
+      if ((j_waitpid (pid, &status, WNOHANG, &tmperr)), G_UNLIKELY (tmperr != NULL))
       {
-        int e = errno;
-        g_set_error_literal (error, J_CLOSURE_ERROR, J_CLOSURE_ERROR_WAITPID, g_strerror (e));
+        g_propagate_error (error, tmperr);
         g_value_set_int (return_value, J_CLOSURE_STATUS_REMOVE);
         return;
       }
@@ -170,7 +169,7 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   g_return_val_if_fail (error == NULL || *error == NULL, NULL);
   JCodegen* self = (codegen);
   JContext context = {0};
-  JBranchChain branch = {0};
+  JTag tag = {0};
   GPtrArray* children = NULL;
   GClosure* gc = NULL;
   JClosure* jc = NULL;
@@ -181,9 +180,9 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   size_t sz = 0;
 
   j_context_init (&context);
-  j_branch_init (&context, &branch, J_BRANCH_TYPE_CHAIN);
-  j_context_generate (&context, ast, &branch);
-  j_context_complete (&context);
+  j_tag_init (&context, &tag);
+  j_context_generate (&context, ast, &tag);
+  j_context_finish (&context);
 
   if (context.expansions->len > 0)
     {
@@ -242,10 +241,12 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
       j_context_clear (&context);
     }
 #if DEVELOPER == 1
-  j_context_debug_build (&context);
+  g_file_set_contents ("closure", j_block_ptr (&jc->block), j_block_sz (&jc->block), &tmperr);
+  g_assert_no_error (tmperr);
+  j_context_emit_debuginfo (&context);
   j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));
 #endif // DEVELOPER
   jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
-  jc->entry = dasm_getpclabel (&context, branch.directpc) + j_block_ptr (&jc->block);
+  jc->entry = j_tag_as_offset (&context, &tag) + j_block_ptr (&jc->block);
 return (j_block_protect (&jc->block), j_context_clear (&context), gc);
 }

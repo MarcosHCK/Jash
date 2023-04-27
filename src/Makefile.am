@@ -34,11 +34,10 @@ noinst_LTLIBRARIES=\
 
 noinst_HEADERS=\
 	codegen/block.h \
-	codegen/branch.h \
 	codegen/codegen.h \
 	codegen/context.h \
 	codegen/debug/gdb.h \
-	codegen/system.h \
+	codegen/externs.h \
 	codegen/walker.h \
   lexer/datachannel.h \
   lexer/lexer.h \
@@ -87,17 +86,17 @@ jash_LDADD=\
 codegen_liba_la_SOURCES=\
 	codegen/backend/${target_cpu}.c \
 	codegen/block.c \
-	codegen/branch.c \
 	codegen/builtin.c \
 	codegen/codegen.c \
 	codegen/extern.c \
+	codegen/externs.c \
 	codegen/generate.c \
+	codegen/onces.c \
 	$(VOID)
 codegen_liba_la_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash.Codegen\" \
 	-DG_LOG_USE_STRUCTURED=1 \
 	-flto \
-	-D__CODEGEN__=1 \
 	$(GLIB_CFLAGS) \
 	$(VOID)
 codegen_liba_la_LDFLAGS=\

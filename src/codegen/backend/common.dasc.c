@@ -19,22 +19,19 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 
-#if __CODEGEN__
+#ifndef __INTELLISENSE__
 |.actionlist actions
 |.externnames extern_names
 |.globals globl_
 |.globalnames globl_names
 |.section aux, code, data
-
+|
 |.type gpointer, gpointer
 |.type JClosure, JClosure
 |.type JPipe, JPipe
-
+|
 |.define RetContinue, J_CLOSURE_STATUS_CONTINUE
 |.define RetRemove, J_CLOSURE_STATUS_REMOVE
-|
-||typedef gint JPipe [2];
-||G_STATIC_ASSERT (J_CONTEXT_FIRST_STAGE == 0);
 ||
 ||void j_context_init (Dst_DECL)
 ||{
@@ -43,10 +40,10 @@
 ||  Dst->nextpc = 0;
 ||  Dst->maxpc = 2;
 ||  Dst->expansions = g_ptr_array_new ();
-||  Dst->onces = g_hash_table_new (g_str_hash, g_str_equal);
+||  Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
 ||  Dst->strtab = g_hash_table_new (g_str_hash, g_str_equal);
 #if DEVELOPER == 1
-||  Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
+||  Dst->debug_info = g_hash_table_new (g_str_hash, g_str_equal);
 ||  j_gdb_builder_init (&Dst->debug_builder);
 #endif // DEVELOPER
 ||
@@ -55,8 +52,6 @@
 ||  dasm_setup (Dst, actions);
 ||  dasm_growpc (Dst, Dst->maxpc);
 ||
-|   .aux
-|->__aux_start:
 |   .code
 |->__code_start:
 |   .data
@@ -68,38 +63,88 @@
 ||{
 #if DEVELOPER == 1
 ||  j_gdb_builder_clear (&Dst->debug_builder);
-||  g_hash_table_remove_all (Dst->symbols);
-||  g_hash_table_unref (Dst->symbols);
+||  g_hash_table_remove_all (Dst->debug_info);
+||  g_hash_table_unref (Dst->debug_info);
 #endif // DEVELOPER
 ||  g_free (Dst->labels);
 ||  g_ptr_array_unref (Dst->expansions);
-||  g_hash_table_remove_all (Dst->onces);
-||  g_hash_table_unref (Dst->onces);
+||  g_hash_table_remove_all (Dst->symbols);
+||  g_hash_table_unref (Dst->symbols);
 ||  g_hash_table_remove_all (Dst->strtab);
 ||  g_hash_table_unref (Dst->strtab);
 ||  dasm_free (Dst);
 ||}
-|
-||void j_context_complete (Dst_DECL)
+||
+||/* Defined at the bottom of the file */
+||void j_context_emit_debuginfo (Dst_DECL);
+||
+||static void finish_code_und (Dst_DECL, GHashTableIter* iter)
 ||{
-#if __CODEGEN__
-|   .aux
-|->__aux_end:
-|   .code
+||  JTag tag;
+||  JOnceID* once;
+||  const JOnceInit* init;
+||
+||  while (g_hash_table_iter_next (iter, (gpointer*) &once, &tag))
+||  {
+|=>(j_tag_as_pc (&tag)):
+||
+||    if ((init = j_once_lookup (once, strlen (once))) != NULL)
+||      init->callback (Dst);
+||    else
+||      g_error ("(" G_STRLOC "): Unknown once '%s'", once);
+||  }
+||}
+||
+||static void finish_data_und (Dst_DECL, GHashTableIter* iter)
+||{
+||  JTag tag;
+||  JOnceID* once;
+||
+||  while (g_hash_table_iter_next (iter, (gpointer*) &once, &tag))
+||  {
+|=>(j_tag_as_pc (&tag)):
+||    j_context_store (Dst, once, strlen (once) + 1);
+||  }
+||}
+||
+||void j_context_finish (Dst_DECL)
+||{
+||  GHashTableIter iter;
+||
+|.code
+||  g_hash_table_iter_init (&iter, Dst->symbols);
+||  finish_code_und (Dst, &iter);
 |->__code_end:
-|   .data
+||
+|.data
+||  g_hash_table_iter_init (&iter, Dst->strtab);
+||  finish_data_und (Dst, &iter);
 |->__data_end:
-#endif // __CODEGEN__
+||}
+||
+||void j_context_store (Dst_DECL, gconstpointer buffer, gsize bufsz)
+||{
+||  const gsize n_dwords = (bufsz / 4);
+||  const guint32* dwords = & G_STRUCT_MEMBER (guint32, buffer, 0);
+||  const gsize n_bytes = (bufsz % 4);
+||  const guint8* bytes = & G_STRUCT_MEMBER (guint8, buffer, n_dwords * 4);
+||  gsize i;
+||
+||  for (i = 0; i < n_dwords; i++)
+||    {
+|       .dword (GUINT32_TO_LE (dwords [i]))
+||    }
+||
+||  for (i = 0; i < n_bytes; i++)
+||    {
+|       .byte (bytes [i])
+||    }
 ||}
 ||
 #if DEVELOPER == 1
 ||
-||void j_context_debug_build (Dst_DECL)
+||void j_context_emit_debuginfo (Dst_DECL)
 ||{
-||  JGdbSection* aux = NULL;
-||  gpointer aux_start = Dst->labels [globl___aux_start];
-||  gpointer aux_end = Dst->labels [globl___aux_end];
-||  gssize aux_size = aux_end - aux_start;
 ||  JGdbSection* code = NULL;
 ||  gpointer code_start = Dst->labels [globl___code_start];
 ||  gpointer code_end = Dst->labels [globl___code_end];
@@ -110,12 +155,10 @@
 ||  gssize data_size = data_end - data_start;
 ||  JGdbSymbol* symbol;
 ||  guint i;
-|
-||  g_assert (aux_start < aux_end);
-||  g_assert (code_start < code_end);
-||  g_assert (data_start < data_end);
 ||
-||  aux = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "aux", aux_start, aux_size);
+||  g_assert (code_end >= code_start);
+||  g_assert (data_end >= data_start);
+||
 ||  code = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "code", code_start, code_size);
 ||  data = j_gdb_builder_decl_section_as_data (&Dst->debug_builder, "data", data_start, data_size);
 ||
@@ -125,16 +168,14 @@
 ||      gpointer name = (gpointer) globl_names [i];
 ||
 ||      if (base == NULL) continue;
-||      else if (aux_end >= base && base >= aux_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, aux);
 ||      else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
 ||      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
 ||      else g_assert_not_reached ();
 ||    }
 ||
-||  j_gdb_builder_fill_section (&Dst->debug_builder, aux_start, aux_size, aux);
 ||  j_gdb_builder_fill_section (&Dst->debug_builder, code_start, code_size, code);
 ||  j_gdb_builder_fill_section (&Dst->debug_builder, data_start, data_size, data);
 ||}
 ||
 #endif // DEVELOPER
-#endif // __CODEGEN__
+#endif // __INTELLISENSE__

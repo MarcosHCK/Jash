@@ -1,3 +1,4 @@
+%{
 /* Copyright 2023 MarcosHCK
  * Copyright 2023 DavierSB
  * This file is part of JASH.
@@ -15,9 +16,27 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_CODEGEN_SYSTEM__
-#define __JASH_CODEGEN_SYSTEM__ 1
-#include <errno.h>
-#include <fcntl.h>
-#include <unistd.h>
-#endif // __JASH_CODEGEN_SYSTEM__
+#include <config.h>
+#include <codegen/codegen.h>
+#include <codegen/context.h>
+%}
+
+%struct-type
+%define hash-function-name j_once_hash
+%define lookup-function-name j_once_lookup
+%compare-strncmp
+%omit-struct-type
+
+struct _JOnceInit {};
+%%
+j_branch_fail, j_once_init_branch_fail
+%%
+
+void j_once_init (Dst_DECL, GHashTable* table, JOnceID* once, JTag* tag)
+{
+  if (!g_hash_table_lookup_extended (table, (gpointer) once, NULL, tag))
+    {
+      j_tag_init (Dst, tag);
+      g_hash_table_insert (table, (gpointer) once, *tag);
+    }
+}

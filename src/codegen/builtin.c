@@ -19,6 +19,34 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 
+#define J_SET_CLOSURE_ERROR_SYSCALL(NAME,name) \
+  void j_set_closure_error_##name (GError** error, int errno_value, const gchar* fmt, ...) \
+    { \
+      gchar* error_prefix; \
+      GValue* error_value; \
+      GError* error_pointer; \
+      va_list l; \
+ ; \
+      va_start (l, fmt); \
+ ; \
+      error_prefix = g_strdup_vprintf (fmt, l); \
+      error_pointer = g_error_new (J_CLOSURE_ERROR, J_CLOSURE_ERROR_##NAME, "%s (%s)", error_prefix, g_strerror (errno_value)); \
+      error_value = g_value_init (j_closure_error_value (error_pointer), G_TYPE_INT); \
+ ; \
+      g_value_set_int (error_value, errno_value); \
+      g_propagate_error (error, error_pointer); \
+      g_free (error_prefix); \
+    }
+
+  J_SET_CLOSURE_ERROR_SYSCALL (CHDIR, chdir);
+  J_SET_CLOSURE_ERROR_SYSCALL (DUP2, dup2);
+  J_SET_CLOSURE_ERROR_SYSCALL (EXECVP, execvp);
+  J_SET_CLOSURE_ERROR_SYSCALL (FORK, fork);
+  J_SET_CLOSURE_ERROR_SYSCALL (OPEN, open);
+  J_SET_CLOSURE_ERROR_SYSCALL (PIPE, pipe);
+  J_SET_CLOSURE_ERROR_SYSCALL (WAITPID, waitpid);
+#undef J_SET_CLOSURE_ERROR_SYSCALL
+
 void j_set_closure_error_exit (GError** error, int value)
 {
   GValue* error_value;
