@@ -111,7 +111,7 @@ static GClosure* load (JAsh* self, const gchar* source, gboolean from_file, GErr
       return NULL;
     }
 
-  if ((closure = j_codegen_emit (self->codegen, ast, &tmperr)), G_UNLIKELY (tmperr != NULL))
+  if ((closure = j_codegen_emit (self->codegen, ast, !from_file, &tmperr)), G_UNLIKELY (tmperr != NULL))
     {
       g_propagate_error (error, tmperr);
       _g_closure_unref0 (closure);

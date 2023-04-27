@@ -495,7 +495,25 @@
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_FG)
 ||            {
-||              g_assert_not_reached ();
+||              if (Dst->interactive == FALSE)
+||                {
+|                   j_step_fork
+|                   test rax, rax
+|                   jz >1
+|                     leave
+|                     ret
+|                   1:
+|                     mov c_arg1, error
+|                     mov c_arg2, (J_CLOSURE_ERROR)
+|                     mov c_arg3, (J_CLOSURE_ERROR_FAILED)
+|                     lea c_arg4, [=>(j_tag_once_string_as_pc (Dst, "fg ! (no job control)"))]
+|                     call extern g_set_error_literal
+|                     mov qword error, 0
+|                     j_step_adjust_io
+|                     leave
+|                     ret
+||                }
+||              else g_assert_not_reached ();
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_GET)
 ||            {
@@ -511,7 +529,25 @@
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_JOBS)
 ||            {
-||              g_assert_not_reached ();
+||              if (Dst->interactive == FALSE)
+||                {
+|                   j_step_fork
+|                   test rax, rax
+|                   jz >1
+|                     leave
+|                     ret
+|                   1:
+|                     mov c_arg1, error
+|                     mov c_arg2, (J_CLOSURE_ERROR)
+|                     mov c_arg3, (J_CLOSURE_ERROR_FAILED)
+|                     lea c_arg4, [=>(j_tag_once_string_as_pc (Dst, "jobs ! (no job control)"))]
+|                     call extern g_set_error_literal
+|                     mov qword error, 0
+|                     j_step_adjust_io
+|                     leave
+|                     ret
+||                }
+||              else g_assert_not_reached ();
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_SET)
 ||            {

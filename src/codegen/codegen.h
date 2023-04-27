@@ -49,6 +49,7 @@ extern "C" {
     J_CLOSURE_ERROR_EXECVP,
     J_CLOSURE_ERROR_EXIT,
     J_CLOSURE_ERROR_FORK,
+    J_CLOSURE_ERROR_IRQ,
     J_CLOSURE_ERROR_OPEN,
     J_CLOSURE_ERROR_PIPE,
     J_CLOSURE_ERROR_WAITPID,
@@ -65,7 +66,7 @@ extern "C" {
   G_GNUC_INTERNAL GQuark j_codegen_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GType j_codegen_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JCodegen* j_codegen_new ();
-  G_GNUC_INTERNAL GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error);
+  G_GNUC_INTERNAL GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, gboolean interactive, GError** error);
 
 #if __cplusplus
 }

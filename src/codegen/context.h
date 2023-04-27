@@ -73,6 +73,7 @@ extern "C"
   
     guint maxpc;
     guint nextpc;
+    guint interactive : 1;
 
     GPtrArray* expansions;
     GHashTable* symbols;

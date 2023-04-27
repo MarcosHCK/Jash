@@ -62,3 +62,24 @@ void j_set_closure_error_exit (GError** error, int value)
   g_value_set_int (g_value_init (error_value, G_TYPE_INT), value);
   g_propagate_error (error, error_pointer);
 }
+
+void j_set_closure_error_irq (GError** error, ...)
+{
+  GValue* error_value;
+  GError* error_pointer;
+  GPtrArray* array;
+  gchar* argument;
+  va_list l;
+
+  va_start (l, error);
+
+  array = g_ptr_array_new_with_free_func (g_free);
+  error_pointer = g_error_new_literal (J_CLOSURE_ERROR, J_CLOSURE_ERROR_IRQ, "interrupt !");
+  error_value = j_closure_error_value (error_pointer);
+
+  while ((argument = va_arg (l, gchar*)) != NULL)
+    g_ptr_array_add (array, argument);
+    g_ptr_array_add (array, (va_end (l), NULL));
+  g_value_init (error_value, G_TYPE_STRV);
+  g_value_take_boxed (error_value, g_ptr_array_free (array, FALSE));
+}
