@@ -42,7 +42,8 @@ struct _JRunnerClass
 
 struct _Job
 {
-  guint order;
+  guint order : (sizeof (guint) * 8 - 1);
+  guint is_running : 1;
   GQueue waitq;
 };
 
@@ -128,10 +129,10 @@ static gint uintcmp (guint a, guint b)
 
 static void j_runner_init (JRunner* self)
 {
-  GHashFunc func1 = (GHashFunc) g_bytes_hash;
-  GEqualFunc func2 = (GEqualFunc) g_bytes_equal;
-  GCompareDataFunc func3 = (GCompareDataFunc) uintcmp;
-  GDestroyNotify notify1 = (GDestroyNotify) g_bytes_unref;
+  const GHashFunc func1 = (GHashFunc) g_str_hash;
+  const GEqualFunc func2 = (GEqualFunc) g_str_equal;
+  const GCompareDataFunc func3 = (GCompareDataFunc) uintcmp;
+  const GDestroyNotify notify1 = (GDestroyNotify) g_free;
 
   self->variables = g_hash_table_new_full (func1, func2, notify1, notify1);
   self->background_ref = g_tree_new_full (func3, NULL, NULL, NULL);
@@ -165,7 +166,7 @@ gboolean j_runner_job_pop (JRunner* runner, GQueue* waitq)
         g_queue_push_tail_link (waitq, list);
       return (job_free (job), TRUE);
     }
-return (FALSE);
+return FALSE;
 }
 
 gboolean j_runner_job_pop_nth (JRunner* runner, GQueue* waitq, gint order)
@@ -185,7 +186,39 @@ gboolean j_runner_job_pop_nth (JRunner* runner, GQueue* waitq, gint order)
         g_queue_push_tail_link (waitq, list);
       return (job_free (job), TRUE);
     }
-return (FALSE);
+return FALSE;
+}
+
+static void job_print (guint order, const Job* job, gpointer* data)
+{
+  const gchar lead = (job == data [0]) ? '+' : ((job == data [1]) ? '-' : '\x20');
+  const gchar* state = (job->is_running) ? "Running" : "Stopped";
+  g_print ("%c[%i] %s", lead, order, state);
+}
+
+void j_runner_job_print_all (JRunner* runner)
+{
+  g_return_if_fail (J_IS_RUNNER (runner));
+  const GTraverseFunc func = (GTraverseFunc) job_print;
+
+  gpointer data [2];
+  GList* list;
+
+  if ((list = g_queue_peek_head_link (&runner->background)) == NULL)
+    data [0] = data [1] = NULL;
+  else
+  {
+    data [0] = list->data;
+
+    if ((list = g_list_next (list)) == NULL)
+      data [1] = NULL;
+    else
+    {
+      data [1] = list->data;
+    }
+  }
+
+  g_tree_foreach (runner->background_ref, func, data);
 }
 
 void j_runner_job_push (JRunner* runner, GQueue* waitq)
@@ -247,17 +280,52 @@ gboolean j_runner_run (JRunner* runner, GClosure* closure, gint* exit_code, GErr
 return (g_value_unset (return_value), g_value_unset (param_values + 0), g_value_unset (param_values + 1), exit_thrown);
 }
 
-GBytes* j_runner_variable_get (JRunner* runner, GBytes* key)
+const gchar* j_runner_variable_get (JRunner* runner, const gchar* key)
 {
   g_return_val_if_fail (J_IS_RUNNER (runner), NULL);
   g_return_val_if_fail (key != NULL, NULL);
 return g_hash_table_lookup (runner->variables, key);
 }
 
-void j_runner_variable_set (JRunner* runner, GBytes* key, GBytes* value)
+void j_runner_variable_print (JRunner* runner, const gchar* key)
+{
+  g_return_if_fail (J_IS_RUNNER (runner));
+  g_return_if_fail (key != NULL);
+  JRunner* self = (runner);
+  const gchar* value;
+
+  if ((value = g_hash_table_lookup (self->variables, key)) != NULL)
+  {
+    g_print ("%s", value);
+  }
+}
+
+void j_runner_variable_print_all (JRunner* runner)
+{
+  g_return_if_fail (J_IS_RUNNER (runner));
+  JRunner* self = (runner);
+  GHashTableIter iter = {0};
+  gpointer key, value;
+
+  g_hash_table_iter_init (&iter, self->variables);
+
+  while (g_hash_table_iter_next (&iter, &key, &value))
+  {
+    g_print ("%s=%s\n", (gchar*) key, (gchar*) value);
+  }
+}
+
+void j_runner_variable_remove (JRunner* runner, const gchar* key)
+{
+  g_return_if_fail (J_IS_RUNNER (runner));
+  g_return_if_fail (key != NULL);
+  g_hash_table_remove (runner->variables, key);
+}
+
+void j_runner_variable_set (JRunner* runner, const gchar* key, const gchar* value)
 {
   g_return_if_fail (J_IS_RUNNER (runner));
   g_return_if_fail (key != NULL);
   g_return_if_fail (value != NULL);
-  g_hash_table_insert (runner->variables, key, value);
+  g_hash_table_insert (runner->variables, g_strdup (key), g_strdup (value));
 }

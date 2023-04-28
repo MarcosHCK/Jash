@@ -32,10 +32,14 @@ extern "C" {
   G_GNUC_INTERNAL gboolean j_runner_get_interactive (JRunner* runner);
   G_GNUC_INTERNAL gboolean j_runner_job_pop (JRunner* runner, GQueue* waitq);
   G_GNUC_INTERNAL gboolean j_runner_job_pop_nth (JRunner* runner, GQueue* waitq, gint index);
+  G_GNUC_INTERNAL void j_runner_job_print_all (JRunner* runner);
   G_GNUC_INTERNAL void j_runner_job_push (JRunner* runner, GQueue* waitq);
   G_GNUC_INTERNAL gboolean j_runner_run (JRunner* runner, GClosure* closure, gint* exit_code, GError** error);
-  G_GNUC_INTERNAL GBytes* j_runner_variable_get (JRunner* runner, GBytes* key);
-  G_GNUC_INTERNAL void j_runner_variable_set (JRunner* runner, GBytes* key, GBytes* value);
+  G_GNUC_INTERNAL const gchar* j_runner_variable_get (JRunner* runner, const gchar* key);
+  G_GNUC_INTERNAL void j_runner_variable_print (JRunner* runner, const gchar* key);
+  G_GNUC_INTERNAL void j_runner_variable_print_all (JRunner* runner);
+  G_GNUC_INTERNAL void j_runner_variable_remove (JRunner* runner, const gchar* key);
+  G_GNUC_INTERNAL void j_runner_variable_set (JRunner* runner, const gchar* key, const gchar* value);
 
 #if __cplusplus
 }

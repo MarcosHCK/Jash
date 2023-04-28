@@ -462,35 +462,44 @@
 ||                }
 ||              else
 ||                {
-|                   j_step_load_arg, 1, c_arg1
-|                   lea c_arg2, tmperr
-|                   call extern j_parse_int
+||                  if (invoke->n_arguments == 0)
+||                    {
+|                       j_step_report 0
+|                       leave
+|                       ret
+||                    }
+||                  else
+||                    {
+|                       j_step_load_arg, 1, c_arg1
+|                       lea c_arg2, tmperr
+|                       call extern j_parse_int
 |
-|                   mov c_arg2, tmperr
-|                   test c_arg2, c_arg2
-|                   jnz >1
-|                     j_step_report rax
-|                     leave
-|                     ret
-|                   1:
-|                     sub rsp, #gpointer * 2
-|                     mov [rsp], c_arg2
-|                     mov qword tmperr, 0
-|                     j_step_fork
-|                     test rax, rax
-|                     jz >1
-|                       mov c_arg1, [rsp]
-|                       call extern g_error_free
-|                       leave
-|                       ret
-|                     1:
-|                       mov c_arg1, error
-|                       mov c_arg2, [rsp]
-|                       call extern g_propagate_error
-|                       mov qword error, 0
-|                       j_step_adjust_io
-|                       leave
-|                       ret
+|                       mov c_arg2, tmperr
+|                       test c_arg2, c_arg2
+|                       jnz >1
+|                         j_step_report rax
+|                         leave
+|                         ret
+|                       1:
+|                         sub rsp, #gpointer * 2
+|                         mov [rsp], c_arg2
+|                         mov qword tmperr, 0
+|                         j_step_fork
+|                         test rax, rax
+|                         jz >1
+|                           mov c_arg1, [rsp]
+|                           call extern g_error_free
+|                           leave
+|                           ret
+|                         1:
+|                           mov c_arg1, error
+|                           mov c_arg2, [rsp]
+|                           call extern g_propagate_error
+|                           mov qword error, 0
+|                           j_step_adjust_io
+|                           leave
+|                           ret
+||                    }
 ||                }
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_FALSE)
@@ -499,27 +508,193 @@
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_FG)
 ||            {
-||              g_assert_not_reached ();
+||              if (walker->n_pipes > 0)
+||                {
+|                   j_step_fork
+|                   test rax, rax
+|                   jz >1
+|                     leave
+|                     ret
+|                   1:
+|                     mov c_arg1, error
+|                     mov c_arg2, J_CLOSURE_ERROR
+|                     mov c_arg3, J_CLOSURE_ERROR_FAILED
+|                     lea c_arg4, [=>j_tag_once_string_as_pc (Dst, "fg ! (no job control)")]
+|                     call extern g_set_error_literal
+|                     leave
+|                     ret
+||                }
+||              else
+||                {
+|                   mov c_arg1, runner
+|                   call extern j_runner_get_interactive
+|                   test rax, rax
+|                   jnz >1
+|                     j_step_fork
+|                     test rax, rax
+|                     jz >2
+|                       leave
+|                       ret
+|                     2:
+|                       mov c_arg1, error
+|                       mov c_arg2, J_CLOSURE_ERROR
+|                       mov c_arg3, J_CLOSURE_ERROR_FAILED
+|                       lea c_arg4, [=>j_tag_once_string_as_pc (Dst, "fg ! (no job control)")]
+|                       call extern g_set_error_literal
+|                       leave
+|                       ret
+|                   1:
+||
+||                  if (invoke->n_arguments != 0)
+||                    {
+|                       j_step_load_arg 1, c_arg1
+|                       lea c_arg2, tmperr
+|                       call extern j_parse_int
+|
+|                       mov c_arg2, tmperr
+|                       test c_arg2, c_arg2
+|                       jz >1
+|                         sub rsp, #gpointer * 2
+|                         mov [rsp], c_arg2
+|                         mov qword tmperr, 0
+|                         j_step_fork
+|                         test rax, rax
+|                         jz >2
+|                           mov c_arg1, [rsp]
+|                           call extern g_error_free
+|                           leave
+|                           ret
+|                         2:
+|                           mov c_arg1, error
+|                           mov c_arg2, [rsp]
+|                           call extern g_propagate_error
+|                           mov qword error, 0
+|                           j_step_adjust_io
+|                           leave
+|                           ret
+|                       1:
+||                    }
+||
+|                   mov c_arg1, runner
+|                   mov c_arg2, self
+|                   lea c_arg2, JClosure:c_arg2->waitq
+||
+||                  if (invoke->n_arguments == 0)
+||                    {
+|                       call extern j_runner_job_pop
+||                    }
+||                  else
+||                    {
+|                       mov c_arg3, rax
+|                       call extern j_runner_job_pop_nth
+||                    }
+|
+|                   test rax, rax
+|                   jz >1
+|                     j_step_fork_and_report 0
+|                   1:
+|                     j_step_fork
+|                     test rax, rax
+|                     jz >1
+|                       leave
+|                       ret
+|                     1:
+|                       mov c_arg1, error
+|                       mov c_arg2, J_CLOSURE_ERROR
+|                       mov c_arg3, J_CLOSURE_ERROR_FAILED
+|                       lea c_arg4, [=>j_tag_once_string_as_pc (Dst, "fg ! (no such job)")]
+|                       call extern g_set_error_literal
+|                       leave
+|                       ret
+||                }
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_GET)
 ||            {
-||              g_assert_not_reached ();
+||              if (invoke->n_arguments == 0)
+||                {
+|                   j_step_fork_and_report 0
+||                }
+||              else
+||                {
+|                   j_step_fork
+|                   test rax, rax
+|                   jz >1
+|                     leave
+|                     ret
+|                   1:
+|                     j_step_adjust_io
+|                     j_step_load_arg, 1, c_arg2
+|                     mov c_arg1, runner
+|                     call extern j_runner_variable_print
+|                     j_step_report 0
+|                     leave
+|                     ret
+||                }
 ||            }
-||          else if (value == J_TOKEN_BUILTIN_HELP)
+||          else if (value == J_TOKEN_BUILTIN_HELP
+||                || value == J_TOKEN_BUILTIN_HISTORY
+||                || value == J_TOKEN_BUILTIN_JOBS)
 ||            {
-||              g_assert_not_reached ();
-||            }
-||          else if (value == J_TOKEN_BUILTIN_HISTORY)
-||            {
-||              g_assert_not_reached ();
-||            }
-||          else if (value == J_TOKEN_BUILTIN_JOBS)
-||            {
-||              g_assert_not_reached ();
+|               j_step_fork
+|               test rax, rax
+|               jz >1
+|                 leave
+|                 ret
+|               1:
+||                if (invoke->n_arguments == 0)
+||                  {
+|                     mov c_arg2, 0
+||                  }
+||                else
+||                  {
+|                     j_step_load_arg 1, c_arg2
+||                  }
+|
+|                 mov c_arg1, runner
+|
+||                if (value == J_TOKEN_BUILTIN_HELP)
+||                  {
+||                    g_assert_not_reached ();
+||                  }
+||                else if (value == J_TOKEN_BUILTIN_HISTORY)
+||                  {
+||                    g_assert_not_reached ();
+||                  }
+||                else if (value == J_TOKEN_BUILTIN_JOBS)
+||                  {
+|                     call extern j_runner_job_print_all
+||                  }
+||                else g_assert_not_reached ();
+|
+|                 j_step_report 0
+|                 leave
+|                 ret
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_SET)
 ||            {
-||              g_assert_not_reached ();
+||              if (invoke->n_arguments == 0)
+||                {
+|                   j_step_fork
+|                   test rax, rax
+|                   jz >1
+|                     leave
+|                     ret
+|                   1:
+|                     j_step_adjust_io
+|                     mov c_arg1, runner
+|                     call extern j_runner_variable_print_all
+|                     j_step_report 0
+|                     leave
+|                     ret
+||                }
+||              else
+||                {
+|                   j_step_load_arg 1, c_arg2
+|                   j_step_load_arg 2, c_arg3
+|                   mov c_arg1, runner
+|                   call extern j_runner_variable_set
+|                   j_step_fork_and_report 0
+||                }
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_TRUE)
 ||            {
@@ -527,7 +702,17 @@
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_UNSET)
 ||            {
-||              g_assert_not_reached ();
+||              if (invoke->n_arguments == 0)
+||                {
+|                   j_step_fork_and_report 0
+||                }
+||              else
+||                {
+|                   j_step_load_arg 1, c_arg2
+|                   mov c_arg1, runner
+|                   call extern j_runner_variable_remove
+|                   j_step_fork_and_report 0
+||                }
 ||            }
 ||          else g_assert_not_reached ();
 ||        }
