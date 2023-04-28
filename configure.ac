@@ -35,7 +35,7 @@ m4_define([v_STAGE], m4_esyscmd_s([git describe | sed -e 's/^v\([0-9]*\)\.\([0-9
 #
 
 AC_INIT([jash], [v_VERSION], [nonuser@nonhost.none], [jash], [https://github.com/MarcosHCK/Jash/])
-AC_CONFIG_SRCDIR([src/jash.c])
+AC_CONFIG_SRCDIR([src/main.c])
 AC_LANG([C])
 
 #

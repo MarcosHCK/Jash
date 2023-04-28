@@ -161,7 +161,7 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
   g_value_set_int (return_value, result);
 }
 
-GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, gboolean interactive, GError** error)
+GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
 {
   g_return_val_if_fail (J_IS_CODEGEN (codegen), NULL);
   g_return_val_if_fail (ast != NULL, NULL);
@@ -180,8 +180,6 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, gboolean interactive, GE
   j_context_init (&context);
   j_tag_init (&context, &tag);
 
-  context.interactive = interactive;
-
   j_context_generate (&context, ast, &tag);
   j_context_finish (&context);
 
@@ -199,7 +197,7 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, gboolean interactive, GE
       JAst* ast = G_STRUCT_MEMBER (JAst*, expansion, 0);
       GClosure* closure = NULL;
 
-      if ((closure = j_codegen_emit (self, ast, FALSE, &tmperr)), G_LIKELY (tmperr == NULL))
+      if ((closure = j_codegen_emit (self, ast, &tmperr)), G_LIKELY (tmperr == NULL))
         g_ptr_array_add (children, closure);
       else
         {

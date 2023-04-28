@@ -28,6 +28,7 @@ noinst_LTLIBRARIES=\
 	codegen/liba.la \
 	lexer/liba.la \
 	parser/liba.la \
+	runtime/liba.la \
 	term/liba.la \
 	$(VOID)
 
@@ -44,6 +45,7 @@ noinst_HEADERS=\
   parser/ast.h \
   parser/parser.h \
   parser/walker.h \
+	runtime/runner.h \
   term/histcontrol.h \
   term/readline.h \
 	$(VOID)
@@ -79,6 +81,7 @@ jash_LDADD=\
 	codegen/liba.la \
 	lexer/liba.la \
 	parser/liba.la \
+	runtime/liba.la \
 	term/liba.la \
 	$(VOID)
 
@@ -145,6 +148,22 @@ parser_liba_la_LDFLAGS=\
 	-flto \
 	$(VOID)
 parser_liba_la_LIBADD=\
+	$(GLIB_LIBS) \
+	$(VOID)
+
+runtime_liba_la_SOURCES=\
+  runtime/runner.c \
+	$(VOID)
+runtime_liba_la_CFLAGS=\
+	-DG_LOG_DOMAIN=\"Jash.Runtime\" \
+	-DG_LOG_USE_STRUCTURED=1 \
+	-flto \
+	$(GLIB_CFLAGS) \
+	$(VOID)
+runtime_liba_la_LDFLAGS=\
+	-flto \
+	$(VOID)
+runtime_liba_la_LIBADD=\
 	$(GLIB_LIBS) \
 	$(VOID)
 
