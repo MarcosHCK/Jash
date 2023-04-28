@@ -1,5 +1,4 @@
 /* Copyright 2023 MarcosHCK
- * Copyright 2023 DavierSB
  * This file is part of JASH.
  *
  * JASH is free software: you can redistribute it and/or modify
@@ -15,8 +14,8 @@
  * You should have received a copy of the GNU General Public License
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
-#ifndef __JASH_READLINE__
-#define __JASH_READLINE__ 1
+#ifndef __JASH_TERM_READLINE__
+#define __JASH_TERM_READLINE__ 1
 #include <glib-object.h>
 
 #define J_TYPE_READLINE (j_readline_get_type ())
@@ -39,4 +38,4 @@ extern "C" {
 }
 #endif // __cplusplus
 
-#endif // __JASH_READLINE__
+#endif // __JASH_TERM_READLINE__

@@ -1,5 +1,4 @@
 # Copyright 2023 MarcosHCK
-# Copyright 2023 DavierSB
 # This file is part of JASH.
 #
 # JASH is free software: you can redistribute it and/or modify
@@ -39,8 +38,6 @@ noinst_HEADERS=\
 	codegen/debug/gdb.h \
 	codegen/externs.h \
 	codegen/walker.h \
-	environ.h \
-	jash.h \
   lexer/datachannel.h \
   lexer/lexer.h \
   lexer/token.h \
@@ -62,8 +59,7 @@ noinst_DATA=\
 #
 
 jash_SOURCES=\
-	environ.c \
-  jash.c \
+	main.c \
 	$(VOID)
 jash_CFLAGS=\
 	-DG_LOG_DOMAIN=\"Jash\" \

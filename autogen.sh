@@ -1,6 +1,5 @@
 #!/bin/sh
 # Copyright 2023 MarcosHCK
-# Copyright 2023 DavierSB
 # This file is part of JASH.
 #
 # JASH is free software: you can redistribute it and/or modify
