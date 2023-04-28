@@ -87,7 +87,6 @@ g_assert_not_reached ();
 static void j_readline_class_constructed (GObject* pself)
 {
   GError* tmperr = NULL;
-  JReadline* self = (gpointer) pself;
 G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
   const gchar* name = ".jash_history";
   const gchar* home = g_get_home_dir ();
@@ -95,37 +94,38 @@ G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
   const gchar* history_file = NULL;
   const gchar* history_flags = NULL;
   const gchar* history_size = NULL;
+  static gsize rl_initialized = 0;
+  JReadline* self = (gpointer) pself;
+  gchar *path, *escaped, *pattern;
+  gchar* tempor = NULL;
+  GRegex* regex;
 
   const gint deflags = J_HIST_CONTROL_IGNORE_DUPLICATED | J_HIST_CONTROL_IGNORE_FIRST_SPACE;
 
-  GRegex* regex1 = g_regex_new ("/?$", 0, 0, &tmperr);
-                g_assert_no_error (tmperr);
-  gchar* path = g_regex_replace_literal (regex1, home, -1, 0, "", 0, &tmperr);
-                g_assert_no_error (tmperr);
-                g_regex_unref (regex1);
-  gchar* escaped = g_regex_escape_string (path, strlen (path));
-                g_free (path);
-  gchar* pattern = g_strdup_printf ("^%s", escaped);
-                g_free (escaped);
-  GRegex* regex2 = g_regex_new (pattern, G_REGEX_OPTIMIZE, 0, &tmperr);
-                g_assert_no_error (tmperr);
-                g_free (pattern);
-
-  self->homerepl = g_steal_pointer (&regex2);
-
-  rl_catch_signals = TRUE;
-  rl_catch_sigwinch = TRUE;
+  regex = (regex = g_regex_new ("/?$", 0, 0, &tmperr), ({ g_assert_no_error (tmperr); }), regex);
+  path = (tempor = g_regex_replace_literal (regex, home, -1, 0, "", 0, &tmperr), g_regex_unref (regex), ({ g_assert_no_error (tmperr); }), tempor);
+  escaped = (tempor = g_regex_escape_string (path, strlen (path)), g_free (path), tempor);
+  pattern = (tempor = g_strdup_printf ("^%s", escaped), g_free (escaped), tempor);
+  self->homerepl = (regex = g_regex_new (pattern, G_REGEX_OPTIMIZE, 0, &tmperr), g_free (pattern), ({ g_assert_no_error (tmperr); }), regex);
 
   self->history_file_size = (history_file_size = g_getenv ("HISTFILESIZE")) ? (gint) g_strtod (history_file_size, NULL) : 2000;
   self->history_file = (history_file = g_getenv ("HISTFILE")) ? g_strdup (history_file) : g_build_filename (home, name, NULL);
   self->history_flags = (history_flags = g_getenv ("HISTCONTROL")) ? (gint) parsecontrol (history_flags) : deflags;
   self->history_size = (history_size = g_getenv ("HISTSIZE")) ? (gint) g_strtod (history_size, NULL) : 1000;
 
-  rl_initialize ();
-  using_history ();
+  if (g_once_init_enter (&rl_initialized))
+  {
+    rl_initialize ();
+    using_history ();
 
-  stifle_history (self->history_size);
-  rl_bind_key ('\t', rl_complete);
+    rl_catch_signals = TRUE;
+    rl_catch_sigwinch = TRUE;
+
+    stifle_history (self->history_size);
+    rl_bind_key ('\t', rl_complete);
+
+    g_once_init_leave (&rl_initialized, 1);
+  }
 }
 
 static void j_readline_class_finalize (GObject* pself)
