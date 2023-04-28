@@ -39,6 +39,8 @@ noinst_HEADERS=\
 	codegen/debug/gdb.h \
 	codegen/externs.h \
 	codegen/walker.h \
+	environ.h \
+	jash.h \
   lexer/datachannel.h \
   lexer/lexer.h \
   lexer/token.h \
@@ -60,6 +62,7 @@ noinst_DATA=\
 #
 
 jash_SOURCES=\
+	environ.c \
   jash.c \
 	$(VOID)
 jash_CFLAGS=\

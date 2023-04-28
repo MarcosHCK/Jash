@@ -16,8 +16,9 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
-#include <jash.h>
 #include <codegen/codegen.h>
+#include <environ.h>
+#include <jash.h>
 #include <lexer/lexer.h>
 #include <parser/parser.h>
 #include <term/readline.h>
@@ -37,6 +38,7 @@ struct _JAsh
   GObject parent;
 
   /*<private>*/
+  JEnviron* environ;
   JCodegen* codegen;
   JLexer* lexer;
   JParser* parser;
@@ -72,6 +74,7 @@ static void j_ash_class_init (JAshClass* klass)
 
 static void j_ash_init (JAsh* self)
 {
+  self->environ = j_environ_new ();
   self->codegen = j_codegen_new ();
   self->lexer = j_lexer_new ();
   self->parser = j_parser_new ();
@@ -142,10 +145,28 @@ static void run (JAsh* self, GClosure* closure, GError** error)
     g_value_unset (param_values + 0);
 }
 
+#define run(self,closure,at_break) \
+  G_STMT_START \
+    { \
+      if ((run (self, closure, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL)) \
+        { \
+          if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_EXIT)) \
+            g_propagate_error (error, tmperr); \
+          else \
+            { \
+              GValue* exit_value = NULL; \
+              exit_value = j_closure_error_value (tmperr); \
+              exit_code = g_value_get_int (exit_value); \
+                        _g_error_free0 (tmperr); \
+            } \
+          G_STMT_START { at_break; } G_STMT_END; \
+        } \
+    } \
+  G_STMT_END
+
 gint j_ash_run_interactive (JAsh* self, GError** error)
 {
   GClosure* closure = NULL;
-  GValue* exit_value = NULL;
   GError* tmperr = NULL;
   JReadline* readline = NULL;
   gint exit_code = 0;
@@ -160,7 +181,9 @@ gint j_ash_run_interactive (JAsh* self, GError** error)
         line = j_readline_get (readline);
         closure = load (self, line, 0, &tmperr);
 
-        if ((g_free (line)), G_UNLIKELY (tmperr != NULL))
+        if ((g_free (line)), G_UNLIKELY (tmperr == NULL))
+          run (self, closure, break);
+        else
           {
             const gint code = tmperr->code;
             const gchar* domain = g_quark_to_string (tmperr->domain);
@@ -168,21 +191,6 @@ gint j_ash_run_interactive (JAsh* self, GError** error)
 
             g_printerr ("%s: %i: %s", domain, code, message);
             _g_error_free0 (tmperr);
-          }
-        else
-          {
-            if ((run (self, closure, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL))
-              {
-                if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_EXIT))
-                  g_propagate_error (error, tmperr);
-                else
-                  {
-                    exit_value = j_closure_error_value (tmperr);
-                    exit_code = g_value_get_int (exit_value);
-                              _g_error_free0 (tmperr);
-                  }
-                break;
-              }
           }
       }
 
@@ -202,18 +210,8 @@ gint j_ash_run_script (JAsh* self, const gchar* filename, GError** error)
   if ((closure = load (self, filename, 1, &tmperr)), G_UNLIKELY (tmperr != NULL))
     g_propagate_error (error, tmperr);
   else
-    {
-      if ((run (self, closure, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL))
-        {
-          if (g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_EXIT))
-            {
-              exit_code = g_value_get_int (j_closure_error_value (tmperr));
-                        _g_error_free0 (tmperr);
-            }
-          else g_propagate_error (error, tmperr);
-        }
-    }
-return exit_code;
+    run (self, closure, g_closure_unref (closure));
+return 0;
 }
 
 int main (int argc, char* argv [])
@@ -225,6 +223,7 @@ int main (int argc, char* argv [])
 
   GOptionContext* context = NULL;
   JAsh* jash = NULL;
+  JEnviron* env = NULL;
   gint exit_code = 0;
   GError* tmperr = NULL;
 
