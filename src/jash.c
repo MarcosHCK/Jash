@@ -40,7 +40,6 @@ struct _JAsh
   JCodegen* codegen;
   JLexer* lexer;
   JParser* parser;
-  JReadline* readline; /* lazy */
 };
 
 struct _JAshClass
@@ -62,7 +61,6 @@ static void j_ash_class_dispose (GObject* pself)
   _g_object_unref0 (self->codegen);
   _g_object_unref0 (self->lexer);
   _g_object_unref0 (self->parser);
-  _g_object_unref0 (self->readline);
 G_OBJECT_CLASS (j_ash_parent_class)->dispose (pself);
 }
 
@@ -147,19 +145,22 @@ static void run (JAsh* self, GClosure* closure, GError** error)
 gint j_ash_run_interactive (JAsh* self, GError** error)
 {
   GClosure* closure = NULL;
-  gboolean continue_ = 0;
+  GValue* exit_value = NULL;
   GError* tmperr = NULL;
+  JReadline* readline = NULL;
   gint exit_code = 0;
   gchar* line;
 
-  if (j_readline_load (self->readline = j_readline_new (), &tmperr), G_UNLIKELY (tmperr != NULL))
+  if (j_readline_history_load (readline = j_readline_new (), &tmperr), G_UNLIKELY (tmperr != NULL))
     g_propagate_error (error, tmperr);
   else
     {
       while (TRUE)
       {
-        if ((closure = load (self, line = j_readline_getline (self->readline), 0, &tmperr), g_free (line)),
-              G_UNLIKELY (tmperr != NULL))
+        line = j_readline_get (readline);
+        closure = load (self, line, 0, &tmperr);
+
+        if ((g_free (line)), G_UNLIKELY (tmperr != NULL))
           {
             const gint code = tmperr->code;
             const gchar* domain = g_quark_to_string (tmperr->domain);
@@ -172,13 +173,22 @@ gint j_ash_run_interactive (JAsh* self, GError** error)
           {
             if ((run (self, closure, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL))
               {
-
+                if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_EXIT))
+                  g_propagate_error (error, tmperr);
+                else
+                  {
+                    exit_value = j_closure_error_value (tmperr);
+                    exit_code = g_value_get_int (exit_value);
+                              _g_error_free0 (tmperr);
+                  }
+                break;
               }
           }
       }
 
-      if (j_readline_save (self->readline, &tmperr), G_UNLIKELY (tmperr != NULL))
+      if (j_readline_history_save (readline, &tmperr), G_UNLIKELY (tmperr != NULL))
         g_propagate_error (error, tmperr);
+        _g_object_unref0 (readline);
     }
 return exit_code;
 }

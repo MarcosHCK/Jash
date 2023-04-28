@@ -36,6 +36,7 @@ struct _JReadline
   guint history_flags;
   guint history_size;
   gchar* history_file;
+  GRegex* homerepl;
   gchar* lastpwd;
   gchar* prompt;
 };
@@ -86,6 +87,7 @@ g_assert_not_reached ();
 
 static void j_readline_class_constructed (GObject* pself)
 {
+  GError* tmperr = NULL;
   JReadline* self = (gpointer) pself;
 G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
   const gchar* name = ".jash_history";
@@ -96,6 +98,21 @@ G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
   const gchar* history_size = NULL;
 
   const gint deflags = J_HIST_CONTROL_IGNORE_DUPLICATED | J_HIST_CONTROL_IGNORE_FIRST_SPACE;
+
+  GRegex* regex1 = g_regex_new ("/?$", 0, 0, &tmperr);
+                g_assert_no_error (tmperr);
+  gchar* path = g_regex_replace_literal (regex1, home, -1, 0, "", 0, &tmperr);
+                g_assert_no_error (tmperr);
+                g_regex_unref (regex1);
+  gchar* escaped = g_regex_escape_string (path, strlen (path));
+                g_free (path);
+  gchar* pattern = g_strdup_printf ("^%s", escaped);
+                g_free (escaped);
+  GRegex* regex2 = g_regex_new (pattern, G_REGEX_OPTIMIZE, 0, &tmperr);
+                g_assert_no_error (tmperr);
+                g_free (pattern);
+
+  self->homerepl = g_steal_pointer (&regex2);
 
   rl_catch_signals = TRUE;
   rl_catch_sigwinch = TRUE;
@@ -154,7 +171,7 @@ static int checkduplicated (const gchar* line)
 return g_str_equal (line, last);
 }
 
-gchar* j_readline_getline (JReadline* readline_)
+gchar* j_readline_get (JReadline* readline_)
 {
   g_return_val_if_fail (readline_ != NULL, NULL);
   JReadline* self = (readline_);
@@ -168,27 +185,40 @@ gchar* j_readline_getline (JReadline* readline_)
       const gchar* user = g_get_user_name ();
       const gchar* host = g_get_host_name ();
 
+      GError* tmperr = NULL;
+      gchar* path = g_regex_replace (self->homerepl, pwd, -1, 0, "~", 0, &tmperr);
+                  g_assert_no_error (tmperr);
+
       self->lastpwd = pwd;
-      self->prompt = g_strdup_printf ("%s@%s:%s$ ", user, host, pwd);
+      self->prompt = g_strdup_printf ("%s@%s:%s$ ", user, host, path);
+        g_free (path);
     }
 
   rl_set_signals ();
 
   gchar* line1 = readline (self->prompt);
   gchar* line2 = g_utf8_make_valid (line1, -1);
-  gchar* line3 = g_strstrip (line2);
-                 rl_clear_signals ();
-
-  gboolean nosave =
-     (((self->history_flags & J_HIST_CONTROL_IGNORE_DUPLICATED) != 0)
-        && checkduplicated (line3) == TRUE)
-  || (((self->history_flags & J_HIST_CONTROL_IGNORE_FIRST_SPACE) != 0)
-        && g_utf8_get_char (line1) == 0x20);
-    g_clear_pointer (&line1, rl_free);
-return (nosave) ? line3 : (add_history (line3), line3);
+return (rl_clear_signals (), rl_free (line1), line2);
 }
 
-void j_readline_save (JReadline* readline, GError** error)
+void j_readline_history_add (JReadline* readline, const gchar* line)
+{
+  g_return_if_fail (J_IS_READLINE (readline));
+  g_return_if_fail (line != NULL);
+  JReadline* self = (readline);
+  gchar* copy = g_strdup (line);
+
+  if (((((self->history_flags & J_HIST_CONTROL_IGNORE_DUPLICATED) != 0)
+        && checkduplicated (line) == TRUE)
+      || (((self->history_flags & J_HIST_CONTROL_IGNORE_FIRST_SPACE) != 0)
+        && g_utf8_get_char (line) == 0x20)) == FALSE)
+    {
+      add_history (g_strstrip (copy));
+        g_free (copy);
+    }
+}
+
+void j_readline_history_save (JReadline* readline, GError** error)
 {
   g_return_if_fail (readline != NULL);
   JReadline* self = (readline);
@@ -210,7 +240,7 @@ void j_readline_save (JReadline* readline, GError** error)
     }
 }
 
-void j_readline_load (JReadline* readline, GError** error)
+void j_readline_history_load (JReadline* readline, GError** error)
 {
   g_return_if_fail (readline != NULL);
   JReadline* self = (readline);
@@ -220,7 +250,7 @@ void j_readline_load (JReadline* readline, GError** error)
   if ((errn_ = read_history (self->history_file)) != 0)
     {
       if ((erro_ = g_file_error_from_errno (errn_)) == G_FILE_ERROR_NOENT)
-        j_readline_save (readline, error);
+        j_readline_history_save (readline, error);
       else
         g_set_error_literal (error, G_FILE_ERROR, erro_, g_strerror (errn_));
     }
