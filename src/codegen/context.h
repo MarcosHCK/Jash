@@ -22,6 +22,7 @@
 # include <codegen/debug/gdb.h>
 # define DASM_CHECKS
 #endif // DEVELOPER
+#include <runtime/runner.h>
 
 typedef void (*JCallback) ();
 typedef struct _JContext JContext;
@@ -32,6 +33,8 @@ typedef struct _JOnceInit JOnceInit;
 typedef gint JPipe [2];
 typedef gpointer JTag;
 typedef struct _JWalker JWalker;
+
+typedef JClosureStatus (*JClosureCallback) (JClosure* closure, JRunner* runner, GError** error);
 
 #define Dst_DECL JContext* Dst
 #define Dst_REF (Dst->state)
@@ -72,7 +75,6 @@ extern "C"
   
     guint maxpc;
     guint nextpc;
-    guint interactive : 1;
 
     GPtrArray* expansions;
     GHashTable* symbols;
@@ -86,18 +88,19 @@ extern "C"
   struct _JClosure
   {
     GClosure closure;
-    GQueue waitq;
     JBlock block;
     gboolean condition;
-    gpointer entry;
 #if DEVELOPER == 1
     JGdb* debug_object;
 #endif // DEVELOPER
+    JClosureCallback entry;
+    GQueue waitq;
 
     union
     {
       GClosure* closure;
       gchar* expanded;
+      gint stdout_pipe;
     } *expansions;
   };
 

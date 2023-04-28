@@ -40,6 +40,8 @@ extern "C" {
   G_GNUC_INTERNAL void j_gdb_builder_clear (JGdbBuilder* builder);
   G_GNUC_INTERNAL JGdbSymbol* j_gdb_builder_decl_function (JGdbBuilder* builder, const gchar* name, gpointer address, JGdbSection* section);
   G_GNUC_INTERNAL JGdbSymbol* j_gdb_builder_decl_object (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size, JGdbSection* section);
+  G_GNUC_INTERNAL JGdbSymbol* j_gdb_builder_decl_section_symbol (JGdbBuilder* builder, const gchar* name, gpointer address, JGdbSection* section);
+  G_GNUC_INTERNAL JGdbSymbol* j_gdb_builder_decl_symbol (JGdbBuilder* builder, const gchar* name, gpointer address, JGdbSection* section);
   G_GNUC_INTERNAL JGdbSection* j_gdb_builder_decl_section_as_code (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size);
   G_GNUC_INTERNAL JGdbSection* j_gdb_builder_decl_section_as_data (JGdbBuilder* builder, const gchar* name, gpointer address, gsize size);
   G_GNUC_INTERNAL void j_gdb_builder_fill_section (JGdbBuilder* builder, gpointer address, gsize size, JGdbSection* section);

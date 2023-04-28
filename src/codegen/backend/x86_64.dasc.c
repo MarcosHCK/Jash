@@ -30,9 +30,10 @@
 |.include codegen/backend/common.dasc.c
 |
 |.define self, gpointer:rbp [-1]
-|.define error, gpointer:rbp [-2]
-|.define tmperr, gpointer:rbp [-3]
-|.define pipes, gpointer:rbp [-4]
+|.define runner, gpointer:rbp [-2]
+|.define error, gpointer:rbp [-3]
+|.define tmperr, gpointer:rbp [-4]
+|.define pipes, gpointer:rbp [-5]
 |.define rtmp, r10
 |.define rsv1, rbx
 |.define rsv2, r15
@@ -258,7 +259,8 @@
 ||/*
 || * Stack (should be 16-bytes aligned):
 || * > JClosure* self; (argument #1)
-|| * > GError** error; (argument #2)
+|| * > JRunner* runner; (argument #2)
+|| * > GError** error; (argument #3)
 || * > GError* tmperr; (local variable)
 || * > JPipes* pipes; (local variable) (if any)
 || * > JPipes pipes_ []; (local variable) (if any)
@@ -279,7 +281,8 @@
 |   mov rbp, rsp
 |   sub rsp, stacksize
 |   mov self, c_arg1
-|   mov error, c_arg2
+|   mov runner, c_arg2
+|   mov error, c_arg3
 |   mov qword tmperr, 0
 ||
 ||  if (walker->n_pipes > 0)
@@ -308,8 +311,9 @@
 ||      j_tag_init (Dst, & invocation_tags [i]);
 ||
 |       mov c_arg1, self
-|       mov c_arg2, pipes
-|       lea c_arg3, tmperr
+|       mov c_arg2, runner
+|       mov c_arg3, pipes
+|       lea c_arg4, tmperr
 |       call =>(j_tag_as_pc (& invocation_tags [i]))
 |
 |       mov c_arg2, tmperr
@@ -353,12 +357,13 @@
 |       mov rbp, rsp
 |       sub rsp, framesz
 |       mov self, c_arg1
-|       mov error, c_arg3
+|       mov runner, c_arg2
+|       mov error, c_arg4
 |       mov qword tmperr, 0
 ||
 ||      if (walker->n_pipes > 0)
 ||        {
-|           mov pipes, c_arg2
+|           mov pipes, c_arg3
 ||        }
 ||
 ||      if (invoke->target_type == J_INVOKE_TARGET_TYPE_REGULAR)
@@ -494,25 +499,7 @@
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_FG)
 ||            {
-||              if (Dst->interactive == FALSE)
-||                {
-|                   j_step_fork
-|                   test rax, rax
-|                   jz >1
-|                     leave
-|                     ret
-|                   1:
-|                     mov c_arg1, error
-|                     mov c_arg2, (J_CLOSURE_ERROR)
-|                     mov c_arg3, (J_CLOSURE_ERROR_FAILED)
-|                     lea c_arg4, [=>(j_tag_once_string_as_pc (Dst, "fg ! (no job control)"))]
-|                     call extern g_set_error_literal
-|                     mov qword error, 0
-|                     j_step_adjust_io
-|                     leave
-|                     ret
-||                }
-||              else g_assert_not_reached ();
+||              g_assert_not_reached ();
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_GET)
 ||            {
@@ -528,25 +515,7 @@
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_JOBS)
 ||            {
-||              if (Dst->interactive == FALSE)
-||                {
-|                   j_step_fork
-|                   test rax, rax
-|                   jz >1
-|                     leave
-|                     ret
-|                   1:
-|                     mov c_arg1, error
-|                     mov c_arg2, (J_CLOSURE_ERROR)
-|                     mov c_arg3, (J_CLOSURE_ERROR_FAILED)
-|                     lea c_arg4, [=>(j_tag_once_string_as_pc (Dst, "jobs ! (no job control)"))]
-|                     call extern g_set_error_literal
-|                     mov qword error, 0
-|                     j_step_adjust_io
-|                     leave
-|                     ret
-||                }
-||              else g_assert_not_reached ();
+||              g_assert_not_reached ();
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_SET)
 ||            {

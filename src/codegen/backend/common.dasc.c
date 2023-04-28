@@ -147,11 +147,11 @@
 ||  JGdbSection* code = NULL;
 ||  gpointer code_start = Dst->labels [globl___code_start];
 ||  gpointer code_end = Dst->labels [globl___code_end];
-||  gssize code_size = code_end - code_start;
+||  gsize code_size = code_end - code_start;
 ||  JGdbSection* data = NULL;
 ||  gpointer data_start = Dst->labels [globl___data_start];
 ||  gpointer data_end = Dst->labels [globl___data_end];
-||  gssize data_size = data_end - data_start;
+||  gsize data_size = data_end - data_start;
 ||  JGdbSymbol* symbol;
 ||  guint i;
 ||
@@ -161,15 +161,24 @@
 ||  code = j_gdb_builder_decl_section_as_code (&Dst->debug_builder, "code", code_start, code_size);
 ||  data = j_gdb_builder_decl_section_as_data (&Dst->debug_builder, "data", data_start, data_size);
 ||
-||  for (i = 0; i < globl__MAX; ++i)
+||  for (i = 0; i < globl__MAX; ++i) switch (i)
 ||    {
-||      gpointer base = (gpointer) Dst->labels [i];
-||      gpointer name = (gpointer) globl_names [i];
+||      case globl___code_start: j_gdb_builder_decl_section_symbol (&Dst->debug_builder, "__code_start", code_start, code); break;
+||      case globl___data_start: j_gdb_builder_decl_section_symbol (&Dst->debug_builder, "__data_start", data_start, data); break;
+||      case globl___code_end: j_gdb_builder_decl_symbol (&Dst->debug_builder, "__code_end", code_start + code_size, code); break;
+||      case globl___data_end: j_gdb_builder_decl_symbol (&Dst->debug_builder, "__data_end", data_start + data_size, data); break;
 ||
-||      if (base == NULL) continue;
-||      else if (code_end >= base && base >= code_start) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
-||      else if (data_end >= base && base >= data_start) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
-||      else g_assert_not_reached ();
+||      default:
+||        {
+||          gpointer base = (gpointer) Dst->labels [i];
+||          gpointer name = (gpointer) globl_names [i];
+||
+||          if (base == NULL) continue;
+||          else if (base >= code_start && code_end > base) j_gdb_builder_decl_function (&Dst->debug_builder, name, base, code);
+||          else if (base >= data_start && data_end > base) j_gdb_builder_decl_object (&Dst->debug_builder, name, base, 0, data);
+||          else g_assert_not_reached ();
+||          break;
+||        }
 ||    }
 ||
 ||  j_gdb_builder_fill_section (&Dst->debug_builder, code_start, code_size, code);
