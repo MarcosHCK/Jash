@@ -73,6 +73,14 @@ static void j_lexer_class_init (JLexerClass* klass)
 
 static void j_lexer_init (JLexer* self)
 {
+  gchar patternbuf [64];
+#define keyword_pattern(keyword) \
+    (({ \
+        const guint length = G_N_ELEMENTS (patternbuf); \
+        const guint used = g_snprintf (patternbuf, length, "(?=[^\\w]|^)%s(?=[^\\w]|^)", (keyword)); \
+          g_assert (used < length); \
+        patternbuf; \
+      }))
 #define token_klass(type,pattern) \
     (({ \
       GError* __tmperr = NULL; \
@@ -88,28 +96,29 @@ static void j_lexer_init (JLexer* self)
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_COMMENT, "#(.*)");
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_QUOTED, "\"(.*?)\"");
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_QUOTED, "\'(.*?)\'");
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_AGAIN);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_CD);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_ELSE);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_END);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_EXIT);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_FALSE);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_FG);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_GET);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_HELP);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_HISTORY);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_JOBS);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_SET);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_THEN);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_TRUE);
-  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, J_TOKEN_BUILTIN_UNSET);
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_AGAIN));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_CD));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, keyword_pattern (J_TOKEN_KEYWORD_ELSE));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, keyword_pattern (J_TOKEN_KEYWORD_END));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_EXIT));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_FALSE));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_FG));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_GET));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_HELP));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_HISTORY));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, keyword_pattern (J_TOKEN_KEYWORD_IF));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_JOBS));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_SET));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_KEYWORD, keyword_pattern (J_TOKEN_KEYWORD_THEN));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_TRUE));
+  self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_BUILTIN, keyword_pattern (J_TOKEN_BUILTIN_UNSET));
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "(>>|&&|\\|\\|)");
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_OPERATOR, "[<>|`&]");
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_SEPARATOR, "[\n;]");
   self->classes [__LINE__ - sizeof (linecount)] = token_klass (J_TOKEN_TYPE_LITERAL, "[^\\s]+");
   G_STATIC_ASSERT (N_CLASSES == __LINE__ - sizeof (linecount));
 #undef token_klass
+#undef keyword_pattern
 }
 
 JLexer* j_lexer_new ()
