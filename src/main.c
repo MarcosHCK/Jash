@@ -182,7 +182,7 @@ int main (int argc, char* argv [])
 #ifdef G_OS_WIN32
       g_strfreev (argv);
 #endif // G_OS_WIN32
-      g_printerr ("%s: %i: %s", domain, code, message);
+      g_printerr ("%s: %i: %s\n", domain, code, message);
       return (g_error_free (tmperr), 1);
     }
 
@@ -194,7 +194,7 @@ int main (int argc, char* argv [])
 #ifdef G_OS_WIN32
       g_strfreev (argv);
 #endif // G_OS_WIN32
-      g_printerr ("%s: %i: %s", domain, code, message);
+      g_printerr ("%s: %i: %s\n", domain, code, message);
       return (g_error_free (tmperr), 1);
     }
 return (exit_code);
