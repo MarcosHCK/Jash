@@ -16,6 +16,7 @@
  */
 #include <config.h>
 #include <codegen/codegen.h>
+#include <runtime/marshal.h>
 #include <runtime/runner.h>
 
 #define J_RUNNER_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST ((klass), J_TYPE_RUNNER, JRunnerClass))
@@ -31,8 +32,8 @@ struct _JRunner
   GObject parent;
   GQueue background;
   GTree* background_ref;
-  GHashTable* variables;
   guint interactive : 1;
+  GHashTable* variables;
 };
 
 struct _JRunnerClass
@@ -54,8 +55,16 @@ enum
   prop_number,
 };
 
+enum
+{
+  signal_variable_modifying,
+  signal_variable_removing,
+  signal_number,
+};
+
 G_DEFINE_FINAL_TYPE (JRunner, j_runner, G_TYPE_OBJECT);
 static GParamSpec* properties [prop_number] = {0};
+static guint signals [signal_number] = {0};
 
 static void job_free (Job* job)
 {
@@ -117,9 +126,15 @@ static void j_runner_class_init (JRunnerClass* klass)
   G_OBJECT_CLASS (klass)->get_property = j_runner_class_get_property;
   G_OBJECT_CLASS (klass)->set_property = j_runner_class_set_property;
 
+  const GType gtype = G_TYPE_FROM_CLASS (klass);
   const guint flags1 = G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE;
+
   properties [prop_interactive] = g_param_spec_boolean ("interactive", "interactive", "interactive", FALSE, flags1);
   g_object_class_install_properties (G_OBJECT_CLASS (klass), prop_number, properties);
+  signals [signal_variable_modifying] = g_signal_new ("variable-modifying", gtype, 0, 0, NULL, NULL, j_cclosure_marshal_VOID__STRING_STRING, G_TYPE_NONE, 2, G_TYPE_STRING, G_TYPE_STRING);
+  signals [signal_variable_removing] = g_signal_new ("variable-removing", gtype, 0, 0, NULL, NULL, j_cclosure_marshal_VOID__STRING, G_TYPE_NONE, 1, G_TYPE_STRING);
+  g_signal_set_va_marshaller (signals [signal_variable_modifying], gtype, j_cclosure_marshal_VOID__STRING_STRINGv);
+  g_signal_set_va_marshaller (signals [signal_variable_removing], gtype, j_cclosure_marshal_VOID__STRINGv);
 }
 
 static gint uintcmp (guint a, guint b)
@@ -319,6 +334,7 @@ void j_runner_variable_remove (JRunner* runner, const gchar* key)
 {
   g_return_if_fail (J_IS_RUNNER (runner));
   g_return_if_fail (key != NULL);
+  g_signal_emit (runner, signals [signal_variable_removing], 0, key);
   g_hash_table_remove (runner->variables, key);
 }
 
@@ -327,5 +343,6 @@ void j_runner_variable_set (JRunner* runner, const gchar* key, const gchar* valu
   g_return_if_fail (J_IS_RUNNER (runner));
   g_return_if_fail (key != NULL);
   g_return_if_fail (value != NULL);
+  g_signal_emit (runner, signals [signal_variable_modifying], 0, key, value);
   g_hash_table_insert (runner->variables, g_strdup (key), g_strdup (value));
 }

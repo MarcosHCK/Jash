@@ -40,78 +40,39 @@ struct _JReadline
   gchar* prompt;
 };
 
+enum
+{
+  prop_0,
+  prop_history_control,
+  prop_history_file,
+  prop_history_file_size,
+  prop_history_size,
+  prop_number,
+};
+
 struct _JReadlineClass
 {
   GObjectClass parent;
 };
 
 G_DEFINE_FINAL_TYPE (JReadline, j_readline, G_TYPE_OBJECT);
-
-static gint parsecontrol (const gchar* histcontrol)
-{
-  gunichar c;
-  const JHistControlIndex* index;
-  const gchar* first = histcontrol;
-  const gchar* ptr = histcontrol;
-  gint value = 0;
-
-  do
-  {
-    switch (c = g_utf8_get_char (ptr))
-    {
-      case (gunichar) 0:
-      case (gunichar) ':':
-        {
-          index = j_hist_control_index_lookup (first, ptr - first);
-          first = g_utf8_next_char (ptr);
-
-          if (index)
-            value |= index->value;
-          else
-            {
-              g_warning ("Ignoring HISTCONTROL value which is invalid");
-              return 0;
-            }
-
-          if (c != (gunichar) 0)
-            break;
-          else
-            return value;
-        }
-    }
-  }
-  while ((ptr = g_utf8_next_char (ptr)));
-g_assert_not_reached ();
-}
+static GParamSpec* properties [prop_number] = {0};
 
 static void j_readline_class_constructed (GObject* pself)
 {
-  GError* tmperr = NULL;
-G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
-  const gchar* name = ".jash_history";
-  const gchar* home = g_get_home_dir ();
-  const gchar* history_file_size = NULL;
-  const gchar* history_file = NULL;
-  const gchar* history_flags = NULL;
-  const gchar* history_size = NULL;
-  static gsize rl_initialized = 0;
   JReadline* self = (gpointer) pself;
-  gchar *path, *escaped, *pattern;
-  gchar* tempor = NULL;
-  GRegex* regex;
-
-  const gint deflags = J_HIST_CONTROL_IGNORE_DUPLICATED | J_HIST_CONTROL_IGNORE_FIRST_SPACE;
+G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
+  const gchar* home = g_get_home_dir ();
+  static gsize rl_initialized = 0;
+  gchar *path, *escaped, *pattern, *tempor;
+  GError* tmperr = NULL;
+  GRegex* regex = NULL;
 
   regex = (regex = g_regex_new ("/?$", 0, 0, &tmperr), ({ g_assert_no_error (tmperr); }), regex);
   path = (tempor = g_regex_replace_literal (regex, home, -1, 0, "", 0, &tmperr), g_regex_unref (regex), ({ g_assert_no_error (tmperr); }), tempor);
   escaped = (tempor = g_regex_escape_string (path, strlen (path)), g_free (path), tempor);
   pattern = (tempor = g_strdup_printf ("^%s", escaped), g_free (escaped), tempor);
   self->homerepl = (regex = g_regex_new (pattern, G_REGEX_OPTIMIZE, 0, &tmperr), g_free (pattern), ({ g_assert_no_error (tmperr); }), regex);
-
-  self->history_file_size = (history_file_size = g_getenv ("HISTFILESIZE")) ? (gint) g_strtod (history_file_size, NULL) : 2000;
-  self->history_file = (history_file = g_getenv ("HISTFILE")) ? g_strdup (history_file) : g_build_filename (home, name, NULL);
-  self->history_flags = (history_flags = g_getenv ("HISTCONTROL")) ? (gint) parsecontrol (history_flags) : deflags;
-  self->history_size = (history_size = g_getenv ("HISTSIZE")) ? (gint) g_strtod (history_size, NULL) : 1000;
 
   if (g_once_init_enter (&rl_initialized))
   {
@@ -137,10 +98,97 @@ static void j_readline_class_finalize (GObject* pself)
 G_OBJECT_CLASS (j_readline_parent_class)->finalize (pself);
 }
 
+static gint parsecontrol (const gchar* histcontrol)
+{
+  gunichar c;
+  const JHistControlIndex* index;
+  const gchar* first = histcontrol;
+  const gchar* ptr = histcontrol;
+  gint value = 0;
+
+  do
+    {
+      switch (c = g_utf8_get_char (ptr))
+      {
+        case (gunichar) 0:
+        case (gunichar) ':':
+          {
+            index = j_hist_control_index_lookup (first, ptr - first);
+            first = g_utf8_next_char (ptr);
+
+            if (index)
+              value |= index->value;
+            else
+              {
+                g_warning ("Ignoring HISTCONTROL value which is invalid");
+                return 0;
+              }
+
+            if (c != (gunichar) 0)
+              break;
+            else
+              return value;
+          }
+      }
+    }
+  while ((ptr = g_utf8_next_char (ptr)));
+g_assert_not_reached ();
+}
+
+static void j_readline_class_set_property (GObject* pself, guint property_id, const GValue* value, GParamSpec* pspec)
+{
+  JReadline* self = (gpointer) pself;
+
+  switch (property_id)
+  {
+    case prop_history_control:
+      self->history_flags = parsecontrol (g_value_get_string (value));
+      break;
+    case prop_history_file:
+      g_free (self->history_file);
+      self->history_file = g_value_dup_string (value);
+      break;
+    case prop_history_file_size:
+    case prop_history_size:
+      {
+        GError* tmperr = NULL;
+        gchar* string = (gchar*) g_value_get_string (value);
+        guint64 number = 0;
+  
+        if ((g_ascii_string_to_unsigned (string, 10, 0, G_MAXUINT, &number, &tmperr)), G_UNLIKELY (tmperr != NULL))
+          g_error ("(" G_STRLOC "): %s: %i: %s", g_quark_to_string (tmperr->domain), tmperr->code, tmperr->message);
+        else
+          {
+            switch (property_id)
+            {
+              case prop_history_file_size: self->history_file_size = (guint) number; break;
+              case prop_history_size: self->history_size = (guint) number; break;
+            }
+          }
+        break;
+      }
+    default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (pself, property_id, pspec);
+      break;
+  }
+}
+
 static void j_readline_class_init (JReadlineClass* klass)
 {
   G_OBJECT_CLASS (klass)->constructed = j_readline_class_constructed;
   G_OBJECT_CLASS (klass)->finalize = j_readline_class_finalize;
+  G_OBJECT_CLASS (klass)->set_property = j_readline_class_set_property;
+
+  const guint flags1 = G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT | G_PARAM_WRITABLE;
+  const guint flags2 = G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY | G_PARAM_WRITABLE;
+  const gchar* file = g_build_filename (g_get_home_dir (), ".jash_history", NULL);
+
+  properties [prop_history_control] = g_param_spec_string ("history-control", "history-control", "history-control", "ignoreboth", flags1);
+  properties [prop_history_file] = g_param_spec_string ("history-file", "history-file", "history-file", file, flags2);
+  properties [prop_history_file_size] = g_param_spec_string ("history-file-size", "history-file-size", "history-file-size", "2000", flags1);
+  properties [prop_history_size] = g_param_spec_string ("history-size", "history-size", "history-size", "1000", flags1);
+  g_object_class_install_properties (G_OBJECT_CLASS (klass), prop_number, properties);
+  g_free ((gchar*) file);
 }
 
 static void j_readline_init (JReadline* self)

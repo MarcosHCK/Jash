@@ -152,6 +152,7 @@ parser_liba_la_LIBADD=\
 	$(VOID)
 
 runtime_liba_la_SOURCES=\
+	runtime/marshal.c \
   runtime/runner.c \
 	$(VOID)
 runtime_liba_la_CFLAGS=\
@@ -166,6 +167,13 @@ runtime_liba_la_LDFLAGS=\
 runtime_liba_la_LIBADD=\
 	$(GLIB_LIBS) \
 	$(VOID)
+
+runtime/marshal.c: runtime/marshal.list
+	$(GLIB_GENMARSHAL) --output $@ --prefix j_cclosure_marshal --internal --valist-marshallers --prototypes --stdinc --body $<
+runtime/marshal.h: runtime/marshal.list
+	$(GLIB_GENMARSHAL) --output $@ --prefix j_cclosure_marshal --internal --valist-marshallers --prototypes --stdinc --header $<
+
+runtime/runner.c: runtime/marshal.h
 
 term_liba_la_SOURCES=\
 	term/histcontrol.c \
