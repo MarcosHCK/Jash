@@ -21,9 +21,11 @@
 
 static void walk_argument (Dst_DECL, JWalker* walker, JAst* ast, JArgument* argument);
 static void walk_command (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe);
-static void walk_detach (Dst_DECL, JWalker* walker, JAst* ast);
+static void walk_expression (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
+static void walk_detach (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
 static void walk_ifclosure (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
 static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe);
+static void walk_logical (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
 static void walk_pipe (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe);
 static void walk_scope (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next);
 static void walk_target (Dst_DECL, JWalker* walker, JAst* ast, JInvoke* invoke);
@@ -72,10 +74,31 @@ static void walk_command (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gi
     }
 }
 
-static void walk_detach (Dst_DECL, JWalker* walker, JAst* ast)
+static void walk_expression (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
 {
-  walk_command (Dst, walker, ast, -1, -1);
-  j_walker_mark_detach (walker);
+  switch (j_ast_get_type (ast))
+  {
+    case J_AST_TYPE_LOGICAL_AND:
+    case J_AST_TYPE_LOGICAL_OR:
+      walk_logical (Dst, ast, tag, tag_next);
+      break;
+    case J_AST_TYPE_INVOKE:
+    case J_AST_TYPE_PIPE:
+      {
+        JWalker walker = J_WALKER_INIT;
+
+        walk_command (Dst, &walker, ast, -1, -1);
+        j_context_emit_chain_step (Dst, &walker, tag, tag_next);
+        j_walker_clear (&walker);
+        break;
+      }
+    default: g_assert_not_reached ();
+  }
+}
+
+static void walk_detach (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
+{
+  walk_expression (Dst, ast, tag, tag_next);
 }
 
 static void walk_ifclosure (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
@@ -189,24 +212,52 @@ static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gin
   G_STMT_END;
 }
 
-static void walk_pipe (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe)
+static void walk_logical (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
 {
-  JAst *child1, *child2;
-  gint cur_pipe;
-
-  child1 = j_ast_get_first_child (ast);
-  child2 = j_ast_get_next_sibling (child1);
-  cur_pipe = j_walker_add_pipe (walker);
 #if DEVELOPER == 1
   g_assert (j_ast_n_children (ast) == 2);
 #endif // DEVELOPER
+  JAst* child1 = j_ast_get_first_child (ast);
+  JAst* child2 = j_ast_get_next_sibling (child1);
+  JTag tag_condition, tag_direct, tag_reverse, tag_test;
+
+  j_tag_init (Dst, &tag_condition);
+  j_tag_init (Dst, &tag_direct);
+  j_tag_init (Dst, &tag_reverse);
+  j_tag_init (Dst, &tag_test);
+
+  walk_expression (Dst, child1, tag, &tag_condition);
+  j_context_emit_test (Dst, &tag_condition, &tag_direct, &tag_reverse);
+
+  switch (j_ast_get_type (ast))
+  {
+    case J_AST_TYPE_LOGICAL_AND:
+      j_context_emit_chain_empty (Dst, &tag_reverse, tag_next);
+      walk_expression (Dst, child2, &tag_direct, tag_next);
+      break;
+    case J_AST_TYPE_LOGICAL_OR:
+      j_context_emit_chain_empty (Dst, &tag_direct, tag_next);
+      walk_expression (Dst, child2, &tag_reverse, tag_next);
+      break;
+    default: g_assert_not_reached ();
+  }
+}
+
+static void walk_pipe (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe)
+{
+#if DEVELOPER == 1
+  g_assert (j_ast_n_children (ast) == 2);
+#endif // DEVELOPER
+  JAst* child1 = j_ast_get_first_child (ast);
+  JAst* child2 = j_ast_get_next_sibling (child1);
+  gint cur_pipe = j_walker_add_pipe (walker);
+
   walk_command (Dst, walker, child1, in_pipe, cur_pipe);
   walk_command (Dst, walker, child2, cur_pipe, out_pipe);
 }
 
 static void walk_scope (Dst_DECL, JAst* ast, const JTag* tag_head, const JTag* tag_last)
 {
-  JWalker walker = J_WALKER_INIT;
   JTag tag = {0};
   JTag tag_next = {0};
   JAst* child = NULL;
@@ -225,20 +276,17 @@ static void walk_scope (Dst_DECL, JAst* ast, const JTag* tag_head, const JTag* t
       switch (j_ast_get_type (child))
         {
           case J_AST_TYPE_DETACH:
-            walk_detach (Dst, &walker, child);
-            goto emitchain;
+            walk_detach (Dst, child, &tag, &tag_next);
+            break;
           case J_AST_TYPE_IFCLOSURE:
             walk_ifclosure (Dst, child, &tag, &tag_next);
             break;
           case J_AST_TYPE_INVOKE:
+          case J_AST_TYPE_LOGICAL_AND:
+          case J_AST_TYPE_LOGICAL_OR:
           case J_AST_TYPE_PIPE:
-            walk_command (Dst, &walker, child, -1, -1);
-          emitchain:
-            {
-              j_context_emit_chain_step (Dst, &walker, &tag, &tag_next);
-              j_walker_clear (&walker);
-              break;
-            }
+            walk_expression (Dst, child, &tag, &tag_next);
+            break;
           default: g_assert_not_reached ();
         }
 
