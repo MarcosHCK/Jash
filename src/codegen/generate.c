@@ -56,8 +56,15 @@ static void walk_argument (Dst_DECL, JWalker* walker, JAst* ast, JArgument* argu
         }
       case J_AST_TYPE_EXPANSION:
         {
+          JTag tag_head, tag_last;
+
+          j_tag_init (Dst, &tag_head);
+          j_tag_init (Dst, &tag_last);
+          walk_scope (Dst, ast, &tag_head, &tag_last);
+          j_context_emit_chain_last_and_report (Dst, 0, &tag_last);
+
           argument->type = J_ARGUMENT_TYPE_EXPANSION;
-          argument->index = j_walker_add_expansion (walker, ast);
+          argument->index = j_walker_add_expansion (walker, &tag_head);
           break;
         }
       default: g_assert_not_reached ();

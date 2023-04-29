@@ -27,6 +27,7 @@
 #define J_IS_CODEGEN_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_CODEGEN))
 #define J_CODEGEN_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_CODEGEN, JCodegenClass))
 typedef struct _JCodegenClass JCodegenClass;
+#define _g_free0(var) ((var == NULL) ? NULL : (var = (g_free (var), NULL)))
 typedef struct _GValue JClosureErrorPrivate;
 static void j_closure_error_private_init (JClosureErrorPrivate* priv);
 #define j_closure_error_private_copy g_value_copy
@@ -71,6 +72,13 @@ GValue* j_closure_error_value (const GError* error)
 
 static void closure_nofity (gpointer __null__, JClosure* jc)
 {
+  guint i;
+
+  for (i = 0; i < jc->expansions_count; ++i)
+    _g_free0 (jc->expansion_values [i]);
+    _g_free0 (jc->expansion_values);
+    _g_free0 (jc->expansion_pipes);
+
   g_queue_clear (&jc->waitq);
 #if DEVELOPER == 1
   j_gdb_unregister (jc->debug_object);
@@ -134,7 +142,6 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   JCodegen* self = (codegen);
   JContext context = {0};
   JTag tag = {0};
-  GPtrArray* children = NULL;
   GClosure* gc = NULL;
   JClosure* jc = NULL;
   GError* tmperr = NULL;
@@ -148,43 +155,46 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   j_context_generate (&context, ast, &tag);
   j_context_finish (&context);
 
-  if (context.expansions->len > 0)
-    {
-      GDestroyNotify notify;
-
-      notify = (GDestroyNotify) g_closure_unref;
-      children = g_ptr_array_new_with_free_func (notify);
-    }
-
-  for (i = 0; i < context.expansions->len; ++i)
-    {
-      gpointer* expansion = & g_ptr_array_index (context.expansions, i);
-      JAst* ast = G_STRUCT_MEMBER (JAst*, expansion, 0);
-      GClosure* closure = NULL;
-
-      if ((closure = j_codegen_emit (self, ast, &tmperr)), G_LIKELY (tmperr == NULL))
-        g_ptr_array_add (children, closure);
-      else
-        {
-          g_propagate_error (error, tmperr);
-          g_ptr_array_unref (children);
-          j_context_clear (&context);
-          return NULL;
-        }
-    }
-
   if ((result = dasm_link (&context, &sz)), G_UNLIKELY (result != 0))
     {
       g_set_error_literal (error, J_CODEGEN_ERROR, J_CODEGEN_ERROR_PROGRAM_LINK, "dasm_link()!: failed");
-      g_ptr_array_unref (children);
       j_context_clear (&context);
     }
 
   gc = g_closure_new_simple (sizeof (JClosure), g_object_ref (codegen));
   jc = (JClosure*) gc;
 
-  if (context.expansions->len > 0)
-  g_closure_add_finalize_notifier (gc, children, (GClosureNotify) g_ptr_array_unref);
+  jc->expansion_pipes = (context.max_expansions == 0) ? NULL : g_new (JPipeEnd, context.max_expansions);
+  jc->expansion_values = (context.max_expansions == 0) ? NULL : g_new0 (gchar*, context.max_expansions);
+  jc->expansions_count = context.max_expansions;
+
+  if (jc->expansion_pipes != NULL)
+    {
+#if HAVE_MEMSET
+      memset (jc->expansion_pipes, -1, sizeof (JPipeEnd) * context.max_expansions);
+#else // HAVE_MEMSET
+      JPipeEnd* ptr = jc->expansion_pipes;
+      guint blocksz = 8;
+      guint n_block = (context.max_expansions + (blocksz - 1)) / blocksz;
+      guint i;
+
+      switch (context.max_expansions % blocksz)
+        {
+          case 0: do
+          {
+                    *ptr++ = -1;
+            case 7: *ptr++ = -1;
+            case 6: *ptr++ = -1;
+            case 5: *ptr++ = -1;
+            case 4: *ptr++ = -1;
+            case 3: *ptr++ = -1;
+            case 2: *ptr++ = -1;
+            case 1: *ptr++ = -1;
+          } while (--n_block > 0);
+        }
+#endif // HAME_MEMSET
+    }
+
   g_closure_add_finalize_notifier (gc, codegen, (GClosureNotify) g_object_unref);
   g_closure_add_finalize_notifier (gc, NULL, (GClosureNotify) closure_nofity);
   g_closure_set_marshal (gc, (GClosureMarshal) closure_marshal);
@@ -208,7 +218,6 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
   j_context_emit_debuginfo (&context);
   j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));
 #endif // DEVELOPER
-  jc->expansions = (children == NULL) ? NULL : (gpointer) children->pdata;
   jc->entry = j_tag_as_offset (&context, &tag) + j_block_ptr (&jc->block);
 return (j_block_protect (&jc->block), j_context_clear (&context), gc);
 }

@@ -38,6 +38,8 @@ noinst_HEADERS=\
 	codegen/context.h \
 	codegen/debug/gdb.h \
 	codegen/externs.h \
+	codegen/tag.h \
+	codegen/vararray.h \
 	codegen/walker.h \
   lexer/datachannel.h \
   lexer/lexer.h \

@@ -22,18 +22,19 @@
 # include <codegen/debug/gdb.h>
 # define DASM_CHECKS
 #endif // DEVELOPER
+#include <codegen/tag.h>
 #include <runtime/runner.h>
 
-typedef void (*JCallback) ();
 typedef struct _JContext JContext;
 typedef struct _JClosure JClosure;
 typedef struct _JExtern JExtern;
 typedef const gchar JOnceID;
 typedef struct _JOnceInit JOnceInit;
 typedef gint JPipe [2];
-typedef gpointer JTag;
+typedef gint JPipeEnd;
 typedef struct _JWalker JWalker;
 
+typedef void (*JCallback) ();
 typedef JClosureStatus (*JClosureCallback) (JClosure* closure, JRunner* runner, GError** error);
 
 #define Dst_DECL JContext* Dst
@@ -76,7 +77,7 @@ extern "C"
     guint maxpc;
     guint nextpc;
 
-    GPtrArray* expansions;
+    guint max_expansions;
     GHashTable* symbols;
     GHashTable* strtab;
 #if DEVELOPER == 1
@@ -89,19 +90,15 @@ extern "C"
   {
     GClosure closure;
     JBlock block;
+    JClosureCallback entry;
+    JPipeEnd* expansion_pipes;
+    gchar** expansion_values;
+    guint expansions_count;
+    GQueue waitq;
     gboolean condition;
 #if DEVELOPER == 1
     JGdb* debug_object;
 #endif // DEVELOPER
-    JClosureCallback entry;
-    GQueue waitq;
-
-    union
-    {
-      GClosure* closure;
-      gchar* expanded;
-      gint stdout_pipe;
-    } *expansions;
   };
 
   struct _JExtern
@@ -138,7 +135,10 @@ extern "C"
 #endif // DEVELOPER
   G_GNUC_INTERNAL void j_context_emit_chain_empty (Dst_DECL, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_chain_last (Dst_DECL, const JTag* tag);
+  G_GNUC_INTERNAL void j_context_emit_chain_last_and_report (Dst_DECL, guint exit_code, const JTag* tag);
   G_GNUC_INTERNAL void j_context_emit_chain_step (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
+  G_GNUC_INTERNAL void j_context_emit_chain_step_expansions (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
+  G_GNUC_INTERNAL void j_context_emit_chain_step_expression (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_test (Dst_DECL, const JTag* tag, const JTag* tag_direct, const JTag* tag_reverse);
   G_GNUC_INTERNAL void j_context_finish (Dst_DECL);
   G_GNUC_INTERNAL void j_context_generate (Dst_DECL, JAst* ast, const JTag* tag);
@@ -165,17 +165,6 @@ extern "C"
     (({ \
         guint __pc = j_tag_as_pc ((src)); \
         dasm_getpclabel ((context), __pc); \
-      }))
-  #define j_tag_as_pc(src) \
-    (({ \
-        const JTag* __src = ((src)); \
-          GPOINTER_TO_UINT (*__src); \
-      }))
-  #define j_tag_copy(src,dst) \
-    (({ \
-        const JTag* __src = ((src)); \
-        JTag* __dst = ((dst)); \
-          *__dst = *__src; \
       }))
   #define j_tag_init(context,dst) \
     (({ \

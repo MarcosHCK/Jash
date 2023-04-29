@@ -531,11 +531,11 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
                 if (head->value == J_TOKEN_OPERATOR_EXPANSION)
                   continue;
                 else
-                {
-                  if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1), G_UNLIKELY (tmperr != NULL))
-                    EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), CLEANUP (), NULL));
-                  else continue;
-                }
+                  {
+                    if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1), G_UNLIKELY (tmperr != NULL))
+                      EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), CLEANUP (), NULL));
+                    else continue;
+                  }
               }
             }
 
@@ -552,34 +552,34 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
             {
               g_queue_push_head (&operand_queue, command);
 
-              if (oper != NULL)
-              {
-                const JOperator* op1 = j_operator_lookup (oper->value, strlen (oper->value));
-                const JOperator* op2 = NULL;
+              if (oper != NULL && oper->value != J_TOKEN_OPERATOR_EXPANSION)
+                {
+                  const JOperator* op1 = j_operator_lookup (oper->value, strlen (oper->value));
+                  const JOperator* op2 = NULL;
 
-                while (TRUE)
-                  {
-                    JToken* oper2 = g_queue_peek_head (&operator_queue);
+                  while (TRUE)
+                    {
+                      JToken* oper2 = g_queue_peek_head (&operator_queue);
 
-                    if (oper2 != NULL)
-                      {
-                        op2 = j_operator_lookup (oper2->value, strlen (oper2->value));
-
-                        if ((op1->precedence < op2->precedence)
-                          || ((op1->precedence == op2->precedence)
-                          &&  op1->assoc == J_OPERATOR_ASSOC_LEFT))
+                      if (oper2 != NULL)
                         {
-                          pushoper (&operand_queue, op2);
-                          g_queue_pop_head (&operator_queue);
-                          continue;
+                          op2 = j_operator_lookup (oper2->value, strlen (oper2->value));
+
+                          if ((op1->precedence < op2->precedence)
+                            || ((op1->precedence == op2->precedence)
+                            &&  op1->assoc == J_OPERATOR_ASSOC_LEFT))
+                            {
+                              pushoper (&operand_queue, op2);
+                              g_queue_pop_head (&operator_queue);
+                              continue;
+                            }
                         }
-                      }
 
-                    break;
-                  }
+                      break;
+                    }
 
-                g_queue_push_head (&operator_queue, oper);
-              }
+                  g_queue_push_head (&operator_queue, oper);
+                }
             }
         }
       G_STMT_END;

@@ -28,6 +28,7 @@
 |.type gpointer, gpointer
 |.type JClosure, JClosure
 |.type JPipe, JPipe
+|.type JPipeEnd, JPipeEnd
 |
 |.define RetContinue, J_CLOSURE_STATUS_CONTINUE
 |.define RetRemove, J_CLOSURE_STATUS_REMOVE
@@ -38,7 +39,7 @@
 ||  Dst->n_labels = globl__MAX;
 ||  Dst->nextpc = 0;
 ||  Dst->maxpc = 2;
-||  Dst->expansions = g_ptr_array_new ();
+||  Dst->max_expansions = 0;
 ||  Dst->symbols = g_hash_table_new (g_str_hash, g_str_equal);
 ||  Dst->strtab = g_hash_table_new (g_str_hash, g_str_equal);
 #if DEVELOPER == 1
@@ -66,7 +67,6 @@
 ||  g_hash_table_unref (Dst->debug_info);
 #endif // DEVELOPER
 ||  g_free (Dst->labels);
-||  g_ptr_array_unref (Dst->expansions);
 ||  g_hash_table_remove_all (Dst->symbols);
 ||  g_hash_table_unref (Dst->symbols);
 ||  g_hash_table_remove_all (Dst->strtab);

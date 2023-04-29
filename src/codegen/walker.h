@@ -65,12 +65,11 @@ extern "C" {
     GQueue arguments;
     GQueue expansions;
     GQueue invocations;
-    guint detach : 1;
-    guint n_pipes : (sizeof (guint) * 8 - 1);
+    guint n_pipes;
   };
 
   #define J_INVOKE_INIT { NULL, NULL, 0, 0, 0, NULL, NULL, }
-  #define J_WALKER_INIT { G_QUEUE_INIT, G_QUEUE_INIT, G_QUEUE_INIT, FALSE, 0, }
+  #define J_WALKER_INIT { G_QUEUE_INIT, G_QUEUE_INIT, G_QUEUE_INIT, 0, }
 
   enum
   {
@@ -102,12 +101,10 @@ extern "C" {
           g_queue_clear (&__walker->arguments); \
           g_queue_clear (&__walker->expansions); \
           g_queue_clear_full (&__walker->invocations, (GDestroyNotify) g_free); \
-          __walker->detach = 0; \
           __walker->n_pipes = 0; \
         }))
 
   #define j_walker_add_pipe(walker) (({ JWalker* __walker = ((walker)); __walker->n_pipes++; }))
-  #define j_walker_mark_detach(walker) (({ JWalker* __walker = ((walker)); __walker->detach = TRUE; }))
 
   static inline JInvoke* j_invoke_new (guint n_arguments)
   {
@@ -126,10 +123,10 @@ extern "C" {
         return index;
   }
 
-  static inline guint j_walker_add_expansion (JWalker* walker, JAst* ast)
+  static inline guint j_walker_add_expansion (JWalker* walker, const JTag* tag)
   {
     guint index = g_queue_get_length (&walker->expansions);
-                  g_queue_push_tail (&walker->expansions, ast);
+                  g_queue_push_tail (&walker->expansions, *tag);
         return index;
   }
 

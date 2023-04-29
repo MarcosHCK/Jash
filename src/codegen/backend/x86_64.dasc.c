@@ -18,6 +18,7 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 #include <codegen/externs.h>
+#include <codegen/vararray.h>
 #include <codegen/walker.h>
 #if DEVELOPER == 1
 # include <bfd.h>
@@ -179,8 +180,8 @@
 ||          break;
 ||        case J_ARGUMENT_TYPE_EXPANSION:
 |           mov register, self
-|           mov register, JClosure:register->expansions
-|           mov register, gpointer:register [expansion_indices [__argument->index]]
+|           mov register, JClosure:register->expansion_values
+|           mov register, gpointer:register [__argument->index]
 ||          break;
 ||      }
 ||    }
@@ -213,32 +214,224 @@
 |   j_step_branch_put_last
 ||}
 ||
+||void j_context_emit_chain_last_and_report (Dst_DECL, guint exit_code, const JTag* tag)
+||{
+|=>(j_tag_as_pc (tag)):
+|   sub rsp, 8
+|   mov c_arg1, c_arg3
+|   mov c_arg2, (exit_code)
+|   call extern j_set_closure_error_exit
+|   add rsp, 8
+|   j_step_branch_put_last
+||}
+||
 ||void j_context_emit_chain_step (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next)
 ||{
-#define J_VARARRAY_DECL(name,ctype,pre) \
-||  ctype* name = NULL; \
-||  ctype* name##_dyn = NULL; \
-||  ctype name##_stat [(pre)];
-#define J_VARARRAY_INIT(name,now) \
-||  G_STMT_START \
-||    { \
-||      gsize __now = ((now)); \
-|| ; \
-||      if (G_N_ELEMENTS (name##_stat) >= __now) \
-||        name = name##_stat; \
-||      else \
-||        { \
-||          name##_dyn = g_malloc (sizeof (*name) * __now); \
-||          name = name##_dyn; \
-||        } \
-||    } \
-||  G_STMT_END
-#define J_VARARRAY_CLEAR(name) g_clear_pointer (& name##_dyn, g_free)
+||  guint n_expansions = g_queue_get_length (&walker->expansions);
 ||
+||  if (n_expansions > Dst->max_expansions)
+||    {
+||      Dst->max_expansions = n_expansions;
+||    }
+||
+||  if (g_queue_get_length (&walker->expansions) == 0)
+||    j_context_emit_chain_step_expression (Dst, walker, tag, tag_next);
+||  else
+||    {
+||      JTag intercept;
+||
+||      j_tag_init (Dst, &intercept);
+||      j_context_emit_chain_step_expansions (Dst, walker, tag, &intercept);
+||      j_context_emit_chain_step_expression (Dst, walker, &intercept, tag_next);
+||    }
+||}
+||
+||void j_context_emit_chain_step_expansions (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next)
+||{
+||  GList* list;
+||  JTag splice;
+||  guint i;
+||
+||/*
+|| * Stack (should be 16-bytes aligned):
+|| * > JClosure* self; (argument #1)
+|| * > JRunner* runner; (argument #2)
+|| * > GError** error; (argument #3)
+|| * > GError* tmperr; (local variable)
+|| * > JPipes* pipes; (local variable) (if any)
+|| * > JPipes pipes_ []; (local variable) (if any)
+|| * before self goes other two 8-bytes slots
+|| * - return address (pushed by call, caller)
+|| * - frame pointer (pushed at function entry, callee)
+|| */
+||  gsize stacksize = 0
+|| + sizeof (JClosure*)
+|| + sizeof (JRunner*)
+|| + sizeof (GError**)
+|| + sizeof (GError*)
+|| + sizeof (JPipe)
+||  ; stacksize += 16 - (stacksize % 16);
+||
+|=>(j_tag_as_pc (tag)):
+|   push rbp
+|   mov rbp, rsp
+|   sub rsp, stacksize
+|   mov self, c_arg1
+|   mov runner, c_arg2
+|   mov error, c_arg3
+|   mov qword tmperr, 0
+||
+||  for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next, ++i)
+||    {
+||      JTag tag_head = list->data;
+||
+|       lea c_arg1, [rsp]
+|       mov c_arg2, 1
+|       lea c_arg3, tmperr
+|       call extern j_pipe_init_many
+|
+|       mov c_arg2, tmperr
+|       test c_arg2, c_arg2
+|       jz >1
+|         mov c_arg1, error
+|         call extern g_propagate_error
+|         mov rax, self
+|         j_step_branch_set_fail rax
+|         leave
+|         mov rax, RetRemove
+|         ret
+|       1:
+|         j_step_fork
+|         test rax, rax
+|         jz >1
+|           mov c_arg2, rax
+|           mov c_arg1, self
+|           lea c_arg1, JClosure:c_arg1->waitq
+|           call extern g_queue_push_tail
+|
+|           movsxd c_arg1, dword JPipe:rsp [0] [1]
+|           mov c_arg2, 0
+|           call extern g_close
+|
+|           mov eax, dword JPipe:rsp [0] [0]
+|           mov c_arg1, self
+|           mov c_arg1, JClosure:c_arg1->expansion_pipes
+|           mov JPipeEnd:c_arg1 [i], eax
+|           jmp >2
+|         1:
+|           movsxd c_arg1, dword JPipe:rsp [0] [1]
+|           mov c_arg2, (STDOUT_FILENO)
+|           lea c_arg3, tmperr
+|           call extern j_dup2
+|
+|           mov c_arg2, tmperr
+|           test c_arg2, c_arg2
+|           jz >1
+|             mov c_arg1, error
+|             call extern g_propagate_error
+|             mov rax, self
+|             j_step_branch_set_fail rax
+|             leave
+|             mov rax, RetRemove
+|             ret
+|           1:
+|             mov c_arg1, rsp
+|             mov c_arg2, 1
+|             call extern j_pipe_clear_many
+|
+|             mov rax, self
+|             j_step_branch_set_tag rax, &tag_head
+|             leave
+|             mov rax, RetContinue
+|             ret
+|       2:
+||    }
+||
+||  j_tag_init (Dst, &splice);
+||
+|   mov rax, self
+|   j_step_branch_set_tag rax, &splice
+|   leave
+|   mov rax, RetContinue
+|   ret
+|
+||/*
+|| * Stack (should be 16-bytes aligned):
+|| * > JClosure* self; (argument #1)
+|| * > JRunner* runner; (argument #2)
+|| * > GError** error; (argument #3)
+|| * > GError* tmperr; (local variable)
+|| * > GIOChannel* channel; (local variable)
+|| * before self goes other two 8-bytes slots
+|| * - return address (pushed by call, caller)
+|| * - frame pointer (pushed at function entry, callee)
+|| */
+|=>(j_tag_as_pc (&splice)):
+|   push rbp
+|   mov rbp, rsp
+|   sub rsp, #gpointer * 6
+|   mov self, c_arg1
+|   mov runner, c_arg2
+|   mov error, c_arg3
+|   mov qword tmperr, 0
+||
+||  for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next, ++i)
+||    {
+||      if (i > 0)
+||        {
+|           mov c_arg1, self
+||        }
+|
+|       mov c_arg1, JClosure:c_arg1->expansion_values
+|       lea c_arg1, gpointer:c_arg1 [i]
+|       lea c_arg2, [extern g_free]
+|       call extern g_clear_pointer
+|
+|       mov c_arg1, self
+|       mov c_arg1, JClosure:c_arg1->expansion_pipes
+|       movsxd c_arg1, dword JPipeEnd:c_arg1 [i]
+|       call extern g_io_channel_unix_new
+|
+|       mov [rsp], rax
+|       mov c_arg1, rax
+|       mov c_arg2, self
+|       mov c_arg2, JClosure:c_arg2->expansion_values
+|       lea c_arg2, gpointer:c_arg2 [i]
+|       mov c_arg3, 0
+|       lea c_arg4, tmperr
+|       call extern g_io_channel_read_to_end
+|
+|       mov c_arg1, [rsp]
+|       mov c_arg2, 0
+|       mov c_arg3, 0
+|       call extern g_io_channel_shutdown
+|       mov c_arg1, [rsp]
+|       call extern g_io_channel_unref
+|
+|       mov c_arg2, tmperr
+|       test c_arg2, c_arg2
+|       jz >1
+|         mov c_arg1, error
+|         call extern g_propagate_error
+|         mov rax, self
+|         j_step_branch_set_fail rax
+|         leave
+|         mov rax, RetRemove
+|         ret
+|       1:
+||    }
+||
+|   mov rax, self
+|   j_step_branch_set_tag rax, tag_next
+|   leave
+|   mov rax, RetContinue
+|   ret
+||}
+||
+||void j_context_emit_chain_step_expression (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next)
+||{
 ||  J_VARARRAY_DECL (argument_tags, JTag, 32);
 ||  J_VARARRAY_INIT (argument_tags, g_queue_get_length (&walker->arguments));
-||  J_VARARRAY_DECL (expansion_indices, guint, 32);
-||  J_VARARRAY_INIT (expansion_indices, g_queue_get_length (&walker->expansions));
 ||  J_VARARRAY_DECL (invocation_tags, JTag, 32);
 ||  J_VARARRAY_INIT (invocation_tags, g_queue_get_length (&walker->invocations));
 ||
@@ -248,12 +441,6 @@
 ||  for (list = g_queue_peek_head_link (&walker->arguments), i = 0; list; list = list->next, ++i)
 ||    {
 ||      j_tag_once_string (Dst, & argument_tags [i], list->data);
-||    }
-||
-||  for (list = g_queue_peek_head_link (&walker->expansions), i = 0; list; list = list->next, ++i)
-||    {
-||      expansion_indices [i] = Dst->expansions->len;
-||      g_ptr_array_add (Dst->expansions, list->data);
 ||    }
 ||
 ||/*
@@ -270,6 +457,7 @@
 || */
 ||  gsize stacksize = 0
 || + sizeof (JClosure*)
+|| + sizeof (JRunner*)
 || + sizeof (GError**)
 || + sizeof (GError*)
 || + sizeof (JPipe*) * (walker->n_pipes > 0 ? 1 : 0)
@@ -720,11 +908,7 @@
 ||    }
 ||
 ||  J_VARARRAY_CLEAR (argument_tags);
-||  J_VARARRAY_CLEAR (expansion_indices);
 ||  J_VARARRAY_CLEAR (invocation_tags);
-#undef J_VARARRAY_DECL
-#undef J_VARARRAY_INIT
-#undef J_VARARRAY_CLEAR
 ||}
 ||
 ||void j_context_emit_test (Dst_DECL, const JTag* tag, const JTag* tag_direct, const JTag* tag_reverse)
