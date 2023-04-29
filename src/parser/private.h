@@ -98,6 +98,7 @@ extern "C" {
   #endif // !DEVELOPER
 
   #define j_ast_append(node,child) (({ JAst* __node = ((node)); JAst* __child = ((child)); g_node_append (__node, __child); }))
+  #define j_ast_prepend(node,child) (({ JAst* __node = ((node)); JAst* __child = ((child)); g_node_prepend (__node, __child); }))
   #define j_ast_new(type) (({ guint __type = ((type)); (JAst*) g_node_new (GUINT_TO_POINTER (__type)); }))
 
   static inline JAst* j_ast_new_data (gconstpointer data)

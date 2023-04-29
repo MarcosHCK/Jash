@@ -17,6 +17,7 @@
 #include <config.h>
 #include <parser/ast.h>
 #include <parser/parser.h>
+#include <parser/operator.h>
 #include <parser/private.h>
 #include <parser/walker.h>
 
@@ -453,14 +454,51 @@ static JAst* walk_expansion (JWalker* walker, JToken* head, GError** error)
 return ast;
 }
 
+static void pushoper (GQueue* operand_queue, const JOperator* op)
+{
+  JAst* operation = j_ast_new (op->ast_type);
+#if DEVELOPER == 1
+  g_assert (g_queue_get_length (operand_queue) >= (op->unary ? 1 : 2));
+#endif // DEVLOPER
+  if (op->unary)
+    j_ast_append (operation, g_queue_pop_head (operand_queue));
+  else
+    {
+      j_ast_prepend (operation, g_queue_pop_head (operand_queue));
+      j_ast_prepend (operation, g_queue_pop_head (operand_queue));
+    }
+  g_queue_push_head (operand_queue, operation);
+}
+
+#if DEVELOPER == 1
+# define j_operator_lookup(string,length) \
+  (({ \
+      const gchar* __string = ((string)); \
+      const gsize __length = ((length)); \
+      const JOperator* __desc = NULL; \
+ ; \
+      if ((__desc = (j_operator_lookup) (__string, __length)) == NULL) \
+        g_assert_not_reached (); \
+        __desc; \
+    }))
+#endif // DEVELOPER
+
 static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
 { j_walker_dump (walker);
   GError* tmperr = NULL;
   JToken* token = NULL;
 
-  JAst* ast = NULL;
   JAst* command = NULL;
+  JAst* operation = NULL;
 
+  GQueue operand_queue = G_QUEUE_INIT;
+  GQueue operator_queue = G_QUEUE_INIT;
+
+#define CLEANUP() \
+  (({ \
+      g_queue_clear (&operand_queue); \
+      g_queue_clear (&operator_queue); \
+    }))
 #define SEPARATORS \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_DETACH, \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, \
@@ -482,7 +520,7 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
               if (G_LIKELY (g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF)))
                 _g_error_free0 (tmperr);
               else
-                EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
+                EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), CLEANUP (), NULL));
             }
           else
             {
@@ -495,7 +533,7 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
                 else
                 {
                   if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, -1), G_UNLIKELY (tmperr != NULL))
-                    EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
+                    EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), CLEANUP (), NULL));
                   else continue;
                 }
               }
@@ -509,29 +547,38 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
           j_walker_adjust (&walker2, token);
 
           if ((command = walk_command (&walker2, token, &tmperr), j_walker_clear (&walker2)), G_UNLIKELY (tmperr != NULL))
-            EXCPT (RETHROW (tmperr), (_j_ast_free0 (ast), NULL));
+            EXCPT (RETHROW (tmperr), (CLEANUP (), NULL));
           else
             {
-              ast = (ast == NULL) ? command : (j_ast_append (ast, command), ast);
+              g_queue_push_head (&operand_queue, command);
 
               if (oper != NULL)
               {
-                const guint type = oper->type;
-                const gchar* value = oper->value;
+                const JOperator* op1 = j_operator_lookup (oper->value, strlen (oper->value));
+                const JOperator* op2 = NULL;
 
-                if (value == J_TOKEN_OPERATOR_DETACH)
+                while (TRUE)
                   {
-                    if (j_walker_length (walker) > 0)
-                      EXCPT (THROW_UNEXPECTED (oper), (_j_ast_free0 (ast), NULL));
-                    else
-                      ast = j_ast_new_wrap (J_AST_TYPE_DETACH, ast);
+                    JToken* oper2 = g_queue_peek_head (&operator_queue);
+
+                    if (oper2 != NULL)
+                      {
+                        op2 = j_operator_lookup (oper2->value, strlen (oper2->value));
+
+                        if ((op1->precedence < op2->precedence)
+                          || ((op1->precedence == op2->precedence)
+                          &&  op1->assoc == J_OPERATOR_ASSOC_LEFT))
+                        {
+                          pushoper (&operand_queue, op2);
+                          g_queue_pop_head (&operator_queue);
+                          continue;
+                        }
+                      }
+
+                    break;
                   }
-                else if (value == J_TOKEN_OPERATOR_LOGICAL_AND)
-                  ast = j_ast_new_wrap (J_AST_TYPE_LOGICAL_AND, ast);
-                else if (value == J_TOKEN_OPERATOR_LOGICAL_OR)
-                  ast = j_ast_new_wrap (J_AST_TYPE_LOGICAL_OR, ast);
-                else if (value == J_TOKEN_OPERATOR_PIPE)
-                  ast = j_ast_new_wrap (J_AST_TYPE_PIPE, ast);
+
+                g_queue_push_head (&operator_queue, oper);
               }
             }
         }
@@ -539,7 +586,16 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
     }
 #undef SEPARATORS
   while ((token = j_walker_take (walker)) != NULL);
-return ast;
+
+  while ((token = g_queue_pop_head (&operator_queue)) != NULL)
+    {
+      const JOperator* op = j_operator_lookup (token->value, strlen (token->value));
+      pushoper (&operand_queue, op);
+    }
+#if DEVELOPER == 1
+  g_assert (g_queue_get_length (&operand_queue) == 1);
+#endif // DEVLOPER
+return (operation = g_queue_pop_head (&operand_queue), CLEANUP (), operation);
 }
 
 static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error)

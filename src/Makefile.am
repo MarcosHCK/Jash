@@ -43,6 +43,7 @@ noinst_HEADERS=\
   lexer/lexer.h \
   lexer/token.h \
   parser/ast.h \
+	parser/operator.h \
   parser/parser.h \
   parser/walker.h \
 	runtime/runner.h \
@@ -136,6 +137,7 @@ lexer_liba_la_LIBADD=\
 	$(VOID)
 
 parser_liba_la_SOURCES=\
+	parser/operator.c \
   parser/parser.c \
 	$(VOID)
 parser_liba_la_CFLAGS=\
