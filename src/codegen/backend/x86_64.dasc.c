@@ -603,7 +603,88 @@
 ||
 ||          if (value == J_TOKEN_BUILTIN_AGAIN)
 ||            {
-||              g_assert_not_reached ();
+||              if (walker->n_pipes > 0)
+||                {
+|                   j_step_fork_and_report 0
+||                }
+||              else
+||                {
+|                   mov c_arg1, runner
+|                   call extern j_runner_get_interactive
+|                   test rax, rax
+|                   jnz >1
+|                     j_step_fork_and_report 0
+|                   1:
+|
+|                   sub rsp, #gpointer * 2
+||
+||                  if (invoke->n_arguments > 0)
+||                    {
+|                       j_step_load_arg 1, c_arg1
+|                       lea c_arg2, tmperr
+|                       call extern j_parse_int
+|
+|                       mov c_arg2, tmperr
+|                       test c_arg2, c_arg2
+|                       jz >1
+|                         sub rsp, #gpointer * 2
+|                         mov [rsp], c_arg2
+|                         mov qword tmperr, 0
+|                         j_step_fork
+|                         test rax, rax
+|                         jz >2
+|                           mov c_arg1, [rsp]
+|                           call extern g_error_free
+|                           leave
+|                           ret
+|                         2:
+|                           mov c_arg1, error
+|                           mov c_arg2, [rsp]
+|                           call extern g_propagate_error
+|                           mov qword error, 0
+|                           j_step_adjust_io
+|                           leave
+|                           ret
+|                       1:
+|                         mov gpointer:rsp [1], rax
+||                    }
+||
+|                   call extern j_readline_new
+|                   mov gpointer:rsp [0], rax
+||
+||                  if (invoke->n_arguments == 0)
+||                    {
+|                       mov c_arg1, rax
+|                       call extern j_readline_history_get
+||                    }
+||                  else
+||                    {
+|                       mov c_arg1, rax
+|                       mov c_arg2, gpointer:rsp [1]
+|                       call extern j_readline_history_get_nth
+||                    }
+|
+|                   test rax, rax
+|                   jnz >1
+|                     j_step_fork_and_report 0
+|                   1:
+|                     mov gpointer:rsp [1], rax
+|                     mov c_arg1, gpointer:rsp [0]
+|                     call extern g_object_unref
+|
+|                     mov c_arg2, gpointer:rsp [1]
+|                     leave
+|
+||                  /* Dirty trick */
+|                     pop rax
+|                     mov c_arg1, error
+|                     call extern j_set_closure_error_again
+|                     mov rax, self
+|                     j_step_branch_set_tag rax, tag_next
+|                     leave
+|                     mov rax, RetContinue
+|                     ret
+||                }
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_CD)
 ||            {
@@ -829,6 +910,8 @@
 |                 leave
 |                 ret
 |               1:
+|                 j_step_adjust_io
+|
 ||                if (invoke->n_arguments == 0)
 ||                  {
 |                     mov c_arg2, 0
@@ -846,7 +929,16 @@
 ||                  }
 ||                else if (value == J_TOKEN_BUILTIN_HISTORY)
 ||                  {
-||                    g_assert_not_reached ();
+|                     sub rsp, #gpointer * 2
+|                     call extern j_readline_new
+|
+|                     mov [rsp], rax
+|                     mov c_arg1, rax
+|                     call extern j_readline_history_print
+|
+|                     mov c_arg1, [rsp]
+|                     add rsp, #gpointer * 2
+|                     call extern g_object_unref
 ||                  }
 ||                else if (value == J_TOKEN_BUILTIN_JOBS)
 ||                  {

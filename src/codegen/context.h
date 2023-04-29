@@ -152,6 +152,7 @@ extern "C"
   G_GNUC_INTERNAL void j_once_init_branch_fail (Dst_DECL);
   G_GNUC_INTERNAL const JOnceInit* j_once_lookup (const gchar* name, size_t length);
 
+  G_GNUC_INTERNAL void j_set_closure_error_again (GError** error, const gchar* value);
   G_GNUC_INTERNAL void j_set_closure_error_chdir (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_dup2 (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_execvp (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);

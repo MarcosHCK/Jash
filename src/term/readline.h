@@ -31,8 +31,11 @@ extern "C" {
   G_GNUC_INTERNAL JReadline* j_readline_new ();
   G_GNUC_INTERNAL gchar* j_readline_get (JReadline* readline);
   G_GNUC_INTERNAL void j_readline_history_add (JReadline* readline, const gchar* line);
-  G_GNUC_INTERNAL void j_readline_history_save (JReadline* readline, GError** error);
+  G_GNUC_INTERNAL const gchar* j_readline_history_get (JReadline* readline);
+  G_GNUC_INTERNAL const gchar* j_readline_history_get_nth (JReadline* readline, guint nth);
   G_GNUC_INTERNAL void j_readline_history_load (JReadline* readline, GError** error);
+  G_GNUC_INTERNAL void j_readline_history_save (JReadline* readline, GError** error);
+  G_GNUC_INTERNAL void j_readline_history_print (JReadline* readline);
 
 #if __cplusplus
 }

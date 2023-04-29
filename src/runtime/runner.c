@@ -39,6 +39,9 @@ struct _JRunner
 struct _JRunnerClass
 {
   GObjectClass parent;
+
+  void (*variable_modifying) (JRunner* runner, const gchar* key, const gchar* value);
+  void (*variable_removing) (JRunner* runner, const gchar* key);
 };
 
 struct _Job
@@ -119,6 +122,16 @@ static void j_runner_class_set_property (GObject* pself, guint property_id, cons
   }
 }
 
+static void j_runner_class_variable_modifying (JRunner* self, const gchar* key, const gchar* value)
+{
+  g_hash_table_insert (self->variables, g_strdup (key), g_strdup (value));
+}
+
+static void j_runner_class_variable_removing (JRunner* self, const gchar* key)
+{
+  g_hash_table_remove (self->variables, key);
+}
+
 static void j_runner_class_init (JRunnerClass* klass)
 {
   G_OBJECT_CLASS (klass)->dispose = j_runner_class_dispose;
@@ -126,13 +139,19 @@ static void j_runner_class_init (JRunnerClass* klass)
   G_OBJECT_CLASS (klass)->get_property = j_runner_class_get_property;
   G_OBJECT_CLASS (klass)->set_property = j_runner_class_set_property;
 
+  klass->variable_modifying = j_runner_class_variable_modifying;
+  klass->variable_removing = j_runner_class_variable_removing;
+
   const GType gtype = G_TYPE_FROM_CLASS (klass);
+  const GSignalFlags flags2 = G_SIGNAL_RUN_CLEANUP;
+  const guint offset1 = G_STRUCT_OFFSET (JRunnerClass, variable_modifying);
+  const guint offset2 = G_STRUCT_OFFSET (JRunnerClass, variable_removing);
   const guint flags1 = G_PARAM_STATIC_STRINGS | G_PARAM_CONSTRUCT_ONLY | G_PARAM_READWRITE;
 
   properties [prop_interactive] = g_param_spec_boolean ("interactive", "interactive", "interactive", FALSE, flags1);
   g_object_class_install_properties (G_OBJECT_CLASS (klass), prop_number, properties);
-  signals [signal_variable_modifying] = g_signal_new ("variable-modifying", gtype, 0, 0, NULL, NULL, j_cclosure_marshal_VOID__STRING_STRING, G_TYPE_NONE, 2, G_TYPE_STRING, G_TYPE_STRING);
-  signals [signal_variable_removing] = g_signal_new ("variable-removing", gtype, 0, 0, NULL, NULL, j_cclosure_marshal_VOID__STRING, G_TYPE_NONE, 1, G_TYPE_STRING);
+  signals [signal_variable_modifying] = g_signal_new ("variable-modifying", gtype, flags2, offset1, NULL, NULL, j_cclosure_marshal_VOID__STRING_STRING, G_TYPE_NONE, 2, G_TYPE_STRING, G_TYPE_STRING);
+  signals [signal_variable_removing] = g_signal_new ("variable-removing", gtype, flags2, offset2, NULL, NULL, j_cclosure_marshal_VOID__STRING, G_TYPE_NONE, 1, G_TYPE_STRING);
   g_signal_set_va_marshaller (signals [signal_variable_modifying], gtype, j_cclosure_marshal_VOID__STRING_STRINGv);
   g_signal_set_va_marshaller (signals [signal_variable_removing], gtype, j_cclosure_marshal_VOID__STRINGv);
 }
@@ -334,8 +353,8 @@ void j_runner_variable_remove (JRunner* runner, const gchar* key)
 {
   g_return_if_fail (J_IS_RUNNER (runner));
   g_return_if_fail (key != NULL);
+
   g_signal_emit (runner, signals [signal_variable_removing], 0, key);
-  g_hash_table_remove (runner->variables, key);
 }
 
 void j_runner_variable_set (JRunner* runner, const gchar* key, const gchar* value)
@@ -343,6 +362,6 @@ void j_runner_variable_set (JRunner* runner, const gchar* key, const gchar* valu
   g_return_if_fail (J_IS_RUNNER (runner));
   g_return_if_fail (key != NULL);
   g_return_if_fail (value != NULL);
+
   g_signal_emit (runner, signals [signal_variable_modifying], 0, key, value);
-  g_hash_table_insert (runner->variables, g_strdup (key), g_strdup (value));
 }

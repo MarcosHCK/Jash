@@ -89,6 +89,21 @@ G_OBJECT_CLASS (j_readline_parent_class)->constructed (pself);
   }
 }
 
+static GObject* j_readline_class_constructor (GType type, guint n_construct_properties, GObjectConstructParam *construct_properties)
+{
+  static GObject* singleton = NULL;
+
+  if (!g_once_init_enter (&singleton))
+    return g_object_ref (singleton);
+  else
+    {
+      GObject* object =
+      G_OBJECT_CLASS (j_readline_parent_class)->constructor (type, n_construct_properties, construct_properties);
+      g_once_init_leave (&singleton, object);
+    }
+return (singleton);
+}
+
 static void j_readline_class_finalize (GObject* pself)
 {
   JReadline* self = (gpointer) pself; 
@@ -176,6 +191,7 @@ static void j_readline_class_set_property (GObject* pself, guint property_id, co
 static void j_readline_class_init (JReadlineClass* klass)
 {
   G_OBJECT_CLASS (klass)->constructed = j_readline_class_constructed;
+  G_OBJECT_CLASS (klass)->constructor = j_readline_class_constructor;
   G_OBJECT_CLASS (klass)->finalize = j_readline_class_finalize;
   G_OBJECT_CLASS (klass)->set_property = j_readline_class_set_property;
 
@@ -265,6 +281,40 @@ void j_readline_history_add (JReadline* readline, const gchar* line)
     }
 }
 
+const gchar* j_readline_history_get (JReadline* readline)
+{
+  return j_readline_history_get_nth (readline, history_length - 1);
+}
+
+const gchar* j_readline_history_get_nth (JReadline* readline, guint nth)
+{
+  g_return_val_if_fail (J_IS_READLINE (readline), NULL);
+  HIST_ENTRY* entry = NULL;
+
+  if (nth > 0 && history_length > nth)
+    {
+      if ((entry = history_get (nth)) != NULL)
+        return entry->line;
+    }
+return NULL;
+}
+
+void j_readline_history_load (JReadline* readline, GError** error)
+{
+  g_return_if_fail (readline != NULL);
+  JReadline* self = (readline);
+  GFileError erro_;
+  gint errn_;
+
+  if ((errn_ = read_history (self->history_file)) != 0)
+    {
+      if ((erro_ = g_file_error_from_errno (errn_)) == G_FILE_ERROR_NOENT)
+        j_readline_history_save (readline, error);
+      else
+        g_set_error_literal (error, G_FILE_ERROR, erro_, g_strerror (errn_));
+    }
+}
+
 void j_readline_history_save (JReadline* readline, GError** error)
 {
   g_return_if_fail (readline != NULL);
@@ -287,18 +337,23 @@ void j_readline_history_save (JReadline* readline, GError** error)
     }
 }
 
-void j_readline_history_load (JReadline* readline, GError** error)
+void j_readline_history_print (JReadline* readline)
 {
-  g_return_if_fail (readline != NULL);
-  JReadline* self = (readline);
-  GFileError erro_;
-  gint errn_;
+  HIST_ENTRY** entries = history_list ();
+  guint i, length = history_length;
 
-  if ((errn_ = read_history (self->history_file)) != 0)
-    {
-      if ((erro_ = g_file_error_from_errno (errn_)) == G_FILE_ERROR_NOENT)
-        j_readline_history_save (readline, error);
-      else
-        g_set_error_literal (error, G_FILE_ERROR, erro_, g_strerror (errn_));
-    }
+  for (i = 0; i < length; ++i)
+  {
+    g_print ("[%u] %s\n", i + 1, entries [i]->line);
+  }
+}
+
+void j_readline_history_print_nth (JReadline* readline, guint nth)
+{
+  HIST_ENTRY* entry;
+
+  if ((entry = history_get (nth)) != NULL)
+  {
+    g_print ("%s\n", entry->line);
+  }
 }
