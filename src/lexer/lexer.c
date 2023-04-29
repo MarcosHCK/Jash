@@ -77,7 +77,7 @@ static void j_lexer_init (JLexer* self)
 #define keyword_pattern(keyword) \
     (({ \
         const guint length = G_N_ELEMENTS (patternbuf); \
-        const guint used = g_snprintf (patternbuf, length, "(?=[^\\w]|^)%s(?=[^\\w]|^)", (keyword)); \
+        const guint used = g_snprintf (patternbuf, length, "(?<!\\w)%s(?!\\w)", (keyword)); \
           g_assert (used < length); \
         patternbuf; \
       }))

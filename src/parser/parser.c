@@ -548,6 +548,11 @@ static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error)
   JToken* then = NULL;
   GError* tmperr = NULL;
 
+#define SEPARATORS \
+  J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF, \
+  J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_ELSE, \
+  J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_END
+
   JAst* ast = j_ast_new (J_AST_TYPE_IFCLOSURE);
   JAst* child = NULL;
 
@@ -574,7 +579,7 @@ static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error)
 
           while (TRUE)
             {
-              if (collect (walker, &walker2, &tmperr, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_IF, J_TOKEN_TYPE_KEYWORD, J_TOKEN_KEYWORD_ELSE, -1), G_UNLIKELY (tmperr != NULL))
+              if (collect (walker, &walker2, &tmperr, SEPARATORS, -1), G_UNLIKELY (tmperr != NULL))
                 {
                   if (G_UNLIKELY (!g_error_matches (tmperr, J_PARSER_ERROR, J_PARSER_ERROR_UNEXPECTED_EOF)))
                     EXCPT (RETHROW (tmperr), (j_walker_clear (&walker2), _j_ast_free0 (ast), NULL));
@@ -595,7 +600,7 @@ static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error)
                       ++ifcount;
                       continue;
                     }
-                  else if (value2 == J_TOKEN_KEYWORD_ELSE)
+                  else if (value2 == J_TOKEN_KEYWORD_END)
                     {
                       if (--ifcount > 0)
                         continue;
@@ -635,6 +640,7 @@ static JAst* walk_ifclosure (JWalker* walker, JToken* head, GError** error)
           G_STMT_END;
         }
     }
+#undef SEPARATORS
 return ast;
 }
 
