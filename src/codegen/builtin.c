@@ -18,10 +18,6 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 
-void j_builtin_help (JRunner* runner, const gchar* parameter)
-{
-}
-
 #define J_SET_CLOSURE_ERROR_SYSCALL(NAME,name) \
   void j_set_closure_error_##name (GError** error, int errno_value, const gchar* fmt, ...) \
     { \

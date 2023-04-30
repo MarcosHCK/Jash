@@ -26,6 +26,7 @@ bin_PROGRAMS=jash
 
 noinst_LTLIBRARIES=\
 	codegen/liba.la \
+	dossier/liba.la \
 	lexer/liba.la \
 	parser/liba.la \
 	runtime/liba.la \
@@ -41,6 +42,7 @@ noinst_HEADERS=\
 	codegen/tag.h \
 	codegen/vararray.h \
 	codegen/walker.h \
+	dossier/dossier.h \
   lexer/datachannel.h \
   lexer/lexer.h \
   lexer/token.h \
@@ -82,6 +84,7 @@ jash_LDADD=\
 	$(GOBJECT_LIBS) \
 	$(READLINE_LIBS) \
 	codegen/liba.la \
+	dossier/liba.la \
 	lexer/liba.la \
 	parser/liba.la \
 	runtime/liba.la \
@@ -119,6 +122,27 @@ else
 noinst_DATA+= codegen/debug/builder.c
 noinst_DATA+= codegen/debug/gdb.c
 endif
+
+dossier_liba_la_SOURCES=\
+	dossier/dossier.c \
+	dossier/strings.c \
+	$(VOID)
+dossier_liba_la_CFLAGS=\
+	-DG_LOG_DOMAIN=\"Jash.Dossier\" \
+	-DG_LOG_USE_STRUCTURED=1 \
+	-flto \
+	$(GIO_CFLAGS) \
+	$(GLIB_CFLAGS) \
+	$(GOBJECT_CFLAGS) \
+	$(VOID)
+dossier_liba_la_LDFLAGS=\
+	-flto \
+	$(VOID)
+dossier_liba_la_LIBADD=\
+	$(GIO_LIBS) \
+	$(GLIB_LIBS) \
+	$(GOBJECT_LIBS) \
+	$(VOID)
 
 lexer_liba_la_SOURCES=\
 	lexer/datachannel.c \
@@ -201,10 +225,12 @@ term_liba_la_LIBADD=\
 # - .stringlist -> .c
 #
 
-SUFFIXES=.stringlist .dasc.c .c
+SUFFIXES=.resources.xml .stringlist .dasc.c .c
 DYNASM_CFLAGS=-D DEBUG=\"${DEBUG}\" -D DEVELOPER=\"${DEVELOPER}\" -D PLATFORM=\"${DYNASM_PLATFORM}\"
 
 .dasc.c.c:
 	$(DYNASM) $(DYNASM_CFLAGS) -o $@ $<
 .stringlist.c:
 	$(GPERF) --output-file $@ -PCI $<
+.resources.xml.c:
+	$(GLIB_COMPILE_RESOURCES) --target=$@ --internal -C $(CC) --generate $<

@@ -130,10 +130,14 @@ AC_PROG_RANLIB
 
 PKG_PROG_PKG_CONFIG
 
+AC_CHECK_PROG([GLIB_COMPILE_RESOURCES], [glib-compile-resources], [glib-compile-resources], [no])
+AS_IF([test "x$GLIB_COMPILE_RESOURCES" = "xno"], [AC_MSG_FAILURE([glib-compile-resources not found our your system])])
 AC_CHECK_PROG([GLIB_GENMARSHAL], [glib-genmarshal], [glib-genmarshal], [no])
 AS_IF([test "x$GLIB_GENMARSHAL" = "xno"], [AC_MSG_FAILURE([glib-genmarshal not found our your system])])
 AC_CHECK_PROG([GPERF], [gperf], [gperf], [no])
 AS_IF([test "x$GPERF" = "xno"], [AC_MSG_FAILURE([gperf not found our your system])])
+AC_CHECK_PROG([XXD], [xxd], [xxd], [no])
+AS_IF([test "x$XXD" = "xno"], [AC_MSG_FAILURE([xxd not found our your system])])
 
 AC_ARG_VAR([LUA], [Lua interpreter])
 AS_IF([test "x$LUA" = "x"], [
@@ -152,6 +156,7 @@ AC_SUBST([DYNASM], [\${LUA}\ \${top_builddir}/src/dynasm/dynasm.lua])
 # Note: keep sorted alphabetically 
 #
 
+PKG_CHECK_MODULES([GIO], [gio-2.0])
 PKG_CHECK_MODULES([GLIB], [glib-2.0])
 PKG_CHECK_MODULES([GOBJECT], [gobject-2.0])
 PKG_CHECK_MODULES([READLINE], [readline])

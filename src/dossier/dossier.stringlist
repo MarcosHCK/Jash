@@ -1,0 +1,126 @@
+%{
+/* Copyright 2023 MarcosHCK
+ * This file is part of JASH.
+ *
+ * JASH is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * JASH is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with JASH. If not, see <http://www.gnu.org/licenses/>.
+ */
+#include <config.h>
+#include <dossier/dossier.h>
+#include <gio/gio.h>
+
+G_GNUC_INTERNAL GResource* strings_get_resource (void);
+%}
+
+%struct-type
+%define hash-function-name j_dossier_entry_hash
+%define lookup-function-name j_dossier_entry_lookup
+%compare-strncmp
+%omit-struct-type
+
+struct _JDossierEntry {};
+%%
+basic, 3, "basic: funcionalidades básicas", "/org/hck/jash/dossier/basic.strings"
+multi-pipe, 1, "multi-pipe: múltiples tuberías", "/org/hck/jash/dossier/multipipe.strings"
+background, 0.5, "background: procesos desatendidos", "/org/hck/jash/dossier/background.strings"
+spaces, 0.5, "spaces: parser flexible", "/org/hck/jash/dossier/spaces.strings"
+history, 0.5, "history: historia de comandos", "/org/hck/jash/dossier/history.strings"
+ctrl-c, 0.5, "ctrl-c: captura y manejo de señales", "/org/hck/jash/dossier/ctrlc.strings"
+chain, 0.5, "chain: comandos encadenados en una línea", "/org/hck/jash/dossier/chain.strings"
+if, 1, "if: ejecución condicional", "/org/hck/jash/dossier/if.strings"
+multi-if, 0.5, "multi-if: expresiones condicionales anidadas", "/org/hck/jash/dossier/multif.strings"
+help, 1, "help: informe", "/org/hck/jash/dossier/help.strings"
+variables, 1, "variables: variables del shell", "/org/hck/jash/dossier/variables.strings"
+%%
+
+const gchar* keywords [] =
+{
+  "basic",
+  "multi-pipe",
+  "background",
+  "spaces",
+  "history",
+  "ctrl-c",
+  "chain",
+  "if",
+  "multi-if",
+  "help",
+  "variables",
+};
+
+void j_dossier_help (const gchar* parameter)
+{
+  if (parameter != NULL)
+    {
+      const JDossierEntry* entry = NULL;
+
+      if ((entry = j_dossier_entry_lookup (parameter, strlen (parameter))) != NULL)
+      {
+        const gchar* name = stringpool + entry->name;
+        g_print ("keyword: %s (%.1lf pts)\n", name, entry->cost);
+
+        while (TRUE)
+        {
+          GResource* resource;
+          GError* tmperr = NULL;
+          GBytes* bytes = NULL;
+
+          if ((resource = strings_get_resource ()) == NULL)
+            g_error ("(" G_STRLOC ") WTF?");
+          if ((bytes = g_resource_lookup_data (resource, entry->resource_path, 0, &tmperr)), G_UNLIKELY (tmperr != NULL))
+            g_error ("(" G_STRLOC "): %s: %i: %s", g_quark_to_string (tmperr->domain), tmperr->code, tmperr->message);
+          g_print ("%.*s\n", (int) g_bytes_get_size (bytes), (const gchar*) g_bytes_get_data (bytes, NULL));
+          break;
+        }
+      }
+    }
+  else
+    {
+      g_print ("Autor: Marcos Antonio Pérez Lorenzo (C312)\n");
+
+      g_print ("\nFunciones internas\n");
+      g_print ("&&,||,;: cancatenación de comandos\n");
+      g_print ("again [N]: repite la historia\n");
+      g_print ("cd [DIR]: cambia la carpeta de ejecución a DIR\n");
+      g_print ("exit [N]: hace que el shell retorne (N, or 0)\n");
+      g_print ("false: Nado, solo una función que siempre falla\n");
+      g_print ("fg [JOB_ORDER]: trae el job con orden JOB_ORDER hacia el frente\n");
+      g_print ("get [NAME]: imprime el valor de la variable NAME\n");
+      g_print ("help: muestra esta ayuda\n");
+      g_print ("history: imprime el historial de comandos\n");
+      g_print ("if ... then else end: ejecución condicional\n");
+      g_print ("jobs: iista los jobs pendientes\n");
+      g_print ("set [NAME] [VALUE]: Sobreescribe el valor de la variable NAME con VALUE\n");
+      g_print ("true: No hace nada, solo returna bien todo el tiempo\n");
+      g_print ("unset [NAME]: Destuye el valor de la variable NAME\n");
+
+      const JDossierEntry* entry = NULL;
+      const gchar* name = NULL;
+      guint i, length;
+
+      g_print ("\nFuncionalidades:\n");
+
+      for (i = 0; i < TOTAL_KEYWORDS; ++i)
+      {
+        name = keywords [i];
+        length = strlen (name);
+
+        if ((entry = j_dossier_entry_lookup (name, length)) == NULL)
+          g_error ("(" G_STRLOC "): WTF?");
+        else
+        {
+          g_print ("%s (%.1lf pts)\n", entry->long_name, entry->cost);
+        }
+      }
+    }
+}

@@ -915,20 +915,18 @@
 |               1:
 |                 j_step_adjust_io
 |
-||                if (invoke->n_arguments == 0)
-||                  {
-|                     mov c_arg2, 0
-||                  }
-||                else
-||                  {
-|                     j_step_load_arg 1, c_arg2
-||                  }
-|
-|                 mov c_arg1, runner
-|
 ||                if (value == J_TOKEN_BUILTIN_HELP)
 ||                  {
-|                     call extern j_builtin_help
+||                    if (invoke->n_arguments > 0)
+||                      {
+|                         j_step_load_arg 1, c_arg1
+||                      }
+||                    else
+||                      {
+|                         mov c_arg1, 0
+||                      }
+|
+|                     call extern j_dossier_help
 ||                  }
 ||                else if (value == J_TOKEN_BUILTIN_HISTORY)
 ||                  {
@@ -945,6 +943,7 @@
 ||                  }
 ||                else if (value == J_TOKEN_BUILTIN_JOBS)
 ||                  {
+|                     mov c_arg1, runner
 |                     call extern j_runner_job_print_all
 ||                  }
 ||                else g_assert_not_reached ();

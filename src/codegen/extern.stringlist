@@ -19,6 +19,7 @@
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 #include <codegen/externs.h>
+#include <dossier/dossier.h>
 #include <glib/gstdio.h>
 #include <term/readline.h>
 
@@ -49,7 +50,7 @@ g_queue_push_head, J_CALLBACK (g_queue_push_head)
 g_queue_push_tail, J_CALLBACK (g_queue_push_tail)
 g_set_error, J_CALLBACK (g_set_error)
 g_set_error_literal, J_CALLBACK (g_set_error_literal)
-j_builtin_help, J_CALLBACK (j_builtin_help)
+j_dossier_help, J_CALLBACK (j_dossier_help)
 j_chdir, J_CALLBACK (j_chdir)
 j_dup2, J_CALLBACK (j_dup2)
 j_execvp, J_CALLBACK (j_execvp)
