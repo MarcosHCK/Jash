@@ -30,6 +30,7 @@ extern "C" {
   G_GNUC_INTERNAL GType j_readline_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JReadline* j_readline_new ();
   G_GNUC_INTERNAL gchar* j_readline_get (JReadline* readline);
+  G_GNUC_INTERNAL gboolean j_readline_get_signaled (JReadline* readline);
   G_GNUC_INTERNAL void j_readline_history_add (JReadline* readline, const gchar* line);
   G_GNUC_INTERNAL const gchar* j_readline_history_get (JReadline* readline);
   G_GNUC_INTERNAL const gchar* j_readline_history_get_nth (JReadline* readline, guint nth);

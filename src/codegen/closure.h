@@ -68,6 +68,10 @@ extern "C" {
 #endif // DEVELOPER
   };
 
+  G_GNUC_INTERNAL void j_closure_kill (JClosure* closure);
+  G_GNUC_INTERNAL void j_closure_stop (JClosure* closure);
+  G_GNUC_INTERNAL void j_closure_term (JClosure* closure);
+
 #if __cplusplus
 }
 #endif // __cplusplus

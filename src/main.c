@@ -158,8 +158,13 @@ static gint run (guint argc, gchar* argv[], GError** error)
         {
           if ((line = j_readline_get (readline)) == NULL)
             {
-              /* Ctrl-C */
-              g_assert_not_reached ();
+              /* Ctrl-C or stdin EOF */
+              if (j_readline_get_signaled (readline))
+                continue;
+              else
+              {
+                break;
+              }
             }
 
           if ((finish = j_runner_run_line (runner, line, &exit_code, &tmperr)), G_UNLIKELY (tmperr != NULL))
@@ -167,7 +172,10 @@ static gint run (guint argc, gchar* argv[], GError** error)
               g_propagate_error (error, tmperr);
               return (cleanup (), 1);
             }
-        } while ((j_readline_history_add (readline, line), finish) == FALSE);
+
+          j_readline_history_add (readline, line);
+        }
+      while (finish == FALSE);
 
       if ((j_readline_history_save (readline, &tmperr)), G_UNLIKELY (tmperr != NULL))
         {

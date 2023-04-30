@@ -43,9 +43,6 @@ extern "C" {
   G_GNUC_INTERNAL GQuark j_closure_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GType j_closure_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GValue* j_closure_error_value (const GError* error);
-  G_GNUC_INTERNAL GClosure* j_closure_copy (const GClosure* closure);
-  G_GNUC_INTERNAL void j_closure_kill (GClosure* closure);
-  G_GNUC_INTERNAL void j_closure_stop (GClosure* closure);
 
   G_GNUC_INTERNAL GQuark j_codegen_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GType j_codegen_get_type (void) G_GNUC_CONST;

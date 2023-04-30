@@ -17,6 +17,7 @@
 #include <config.h>
 #include <readline/readline.h>
 #include <readline/history.h>
+#include <setjmp.h>
 #include <term/histcontrol.h>
 #include <term/readline.h>
 
@@ -38,6 +39,7 @@ struct _JReadline
   GRegex* homerepl;
   gchar* lastpwd;
   gchar* prompt;
+  guint signaled : 1;
 };
 
 enum
@@ -234,10 +236,34 @@ static int checkduplicated (const gchar* line)
 return g_str_equal (line, last);
 }
 
+static sigjmp_buf sigint_buffer;
+static gboolean signaled;
+
+static void sigint_handler (gint signum)
+{
+  switch (signum)
+  {
+    case SIGINT:
+      {
+        rl_free_line_state ();
+        rl_cleanup_after_signal ();
+        RL_UNSETSTATE(RL_STATE_ISEARCH|RL_STATE_NSEARCH|RL_STATE_VIMOTION|RL_STATE_NUMERICARG|RL_STATE_MULTIKEY);
+        rl_line_buffer[rl_point = rl_end = rl_mark = 0] = 0;
+        putc ('\n', stdout);
+
+        signaled = TRUE;
+        siglongjmp (sigint_buffer, 1);
+        break;
+      }
+  }
+}
+
 gchar* j_readline_get (JReadline* readline_)
 {
   g_return_val_if_fail (readline_ != NULL, NULL);
   JReadline* self = (readline_);
+  gchar* line1 = NULL;
+  gchar* line2 = NULL;
   gchar* pwd = NULL;
 
   if (!g_strcmp0 (pwd = g_get_current_dir (), self->lastpwd))
@@ -256,12 +282,43 @@ gchar* j_readline_get (JReadline* readline_)
       self->prompt = g_strdup_printf ("%s@%s:%s$ ", user, host, path);
         g_free (path);
     }
+#define cleanup() \
+  (({ \
+      rl_clear_signals (); \
+      signal (SIGINT, SIG_DFL); \
+    }))
 
   rl_set_signals ();
 
-  gchar* line1 = readline (self->prompt);
-  gchar* line2 = g_utf8_make_valid (line1, -1);
-return (rl_clear_signals (), rl_free (line1), line2);
+  if (signal (SIGINT, sigint_handler) < 0)
+    {
+      int e = errno;
+      g_error ("(" G_STRLOC "): signal()! (%s)", g_strerror (e));
+    }
+
+  while (sigsetjmp (sigint_buffer, 1));
+
+  if (signaled)
+    {
+      self->signaled = TRUE;
+      signaled = FALSE;
+    }
+  else
+    {
+      if ((line1 = readline (self->prompt)) != NULL)
+        {
+          line2 = g_utf8_make_valid (line1, -1);
+                rl_free (line1);
+        }
+    }
+return (cleanup (), line2);
+#undef cleanup
+}
+
+gboolean j_readline_get_signaled (JReadline* readline)
+{
+  g_return_val_if_fail (J_IS_READLINE (readline), FALSE);
+  return readline->signaled;
 }
 
 void j_readline_history_add (JReadline* readline, const gchar* line)

@@ -90,16 +90,22 @@ static void closure_kill (JClosure* jc, int signum)
       }
 }
 
-void j_closure_kill (GClosure* closure)
+void j_closure_kill (JClosure* closure)
 {
   g_return_if_fail (closure != NULL);
-  closure_kill ((gpointer) closure, SIGINT);
+  closure_kill (closure, SIGINT);
 }
 
-void j_closure_stop (GClosure* closure)
+void j_closure_stop (JClosure* closure)
 {
   g_return_if_fail (closure != NULL);
-  closure_kill ((gpointer) closure, SIGSTOP);
+  closure_kill (closure, SIGSTOP);
+}
+
+void j_closure_term (JClosure* closure)
+{
+  g_return_if_fail (closure != NULL);
+  closure_kill (closure, SIGTERM);
 }
 
 static void closure_nofity (gpointer __null__, JClosure* jc)

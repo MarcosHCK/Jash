@@ -384,12 +384,27 @@ static GClosure* parse_staged (JRunner* self, GValue* value, GError** error)
 return (({ g_assert_not_reached (); }), NULL);
 }
 
+static gboolean signaled = FALSE;
+
+static void signal_handler (int signum)
+{
+  switch (signum)
+  {
+    case SIGINT:
+      {
+        signaled = TRUE;
+        break;
+      }
+  }
+}
+
 static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code_p, gboolean foreground, GError** error)
 {
   GValue param_values [2] = {0};
   GValue return_value [1] = {0};
   gboolean exit_thrown = FALSE;
   GError* tmperr = NULL;
+  gint signalcnt = 0;
 
   g_value_init (param_values + 0, J_TYPE_RUNNER);
   g_value_init (param_values + 1, G_TYPE_POINTER);
@@ -397,6 +412,17 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
 
   g_value_set_object (param_values + 0, self);
   g_value_set_pointer (param_values + 1, &tmperr);
+
+  if (foreground)
+  {
+    signaled = FALSE;
+
+    if (signal (SIGINT, signal_handler) < 0)
+      {
+        int e = errno;
+        g_error ("(" G_STRLOC "): singal ()! (%s)", g_strerror (e));
+      }
+  }
 
   do
   {
@@ -429,6 +455,17 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
 
       if (G_UNLIKELY (tmperr != NULL))
         break;
+
+      if (signaled)
+        {
+          signaled = FALSE;
+
+          switch (signalcnt++)
+          {
+            case 0: j_closure_kill ((gpointer) closure); break;
+            default: j_closure_term ((gpointer) closure); break;
+          }
+        }
     }
 
     if ((g_closure_invoke (closure, return_value, 2, param_values, NULL)), G_UNLIKELY (tmperr != NULL))
@@ -494,6 +531,7 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
     }
   } while ((g_value_get_int (return_value) == J_CLOSURE_STATUS_CONTINUE)
         || (foreground && (g_value_get_int (return_value) == J_CLOSURE_STATUS_WAITING)));
+    signal (SIGINT, SIG_DFL);
 return (g_value_unset (return_value), g_value_unset (param_values + 0), g_value_unset (param_values + 1), exit_thrown);
 }
 
