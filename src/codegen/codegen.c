@@ -15,6 +15,7 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
+#include <codegen/closure.h>
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 #include <codegen/externs.h>
@@ -28,6 +29,8 @@
 #define J_CODEGEN_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_CODEGEN, JCodegenClass))
 typedef struct _JCodegenClass JCodegenClass;
 #define _g_free0(var) ((var == NULL) ? NULL : (var = (g_free (var), NULL)))
+#define _g_ptr_array_unref0(var) ((var == NULL) ? NULL : (var = (g_ptr_array_unref (var), NULL)))
+#define _j_ast_free0(var) ((var == NULL) ? NULL : (var = (j_ast_free (var), NULL)))
 typedef struct _GValue JClosureErrorPrivate;
 static void j_closure_error_private_init (JClosureErrorPrivate* priv);
 #define j_closure_error_private_copy g_value_copy
@@ -43,9 +46,10 @@ struct _JCodegenClass
   GObjectClass parent;
 };
 
+G_DEFINE_BOXED_TYPE (JClosure, j_closure, (GBoxedCopyFunc) g_closure_ref, (GBoxedFreeFunc) g_closure_unref);
 G_DEFINE_EXTENDED_ERROR (JClosureError, j_closure_error);
-G_DEFINE_QUARK (j-codegen-error-quark, j_codegen_error);
 G_DEFINE_FINAL_TYPE (JCodegen, j_codegen, G_TYPE_OBJECT);
+G_DEFINE_QUARK (j-codegen-error-quark, j_codegen_error);
 
 static void j_closure_error_private_init (JClosureErrorPrivate* priv)
 {
@@ -70,20 +74,50 @@ GValue* j_closure_error_value (const GError* error)
   return j_closure_error_get_private (error);
 }
 
+static void closure_kill (JClosure* jc, int signum)
+{
+  GList* list;
+
+  for (list = g_queue_peek_head_link (&jc->waitq); list; list = list->next)
+    if (kill (GPOINTER_TO_INT (list->data), signum) < 0)
+      {
+      int e = errno;
+#if DEVELOPER == 1
+      g_critical ("(" G_STRLOC "): kill (%i)! (%s)", GPOINTER_TO_INT (list->data), g_strerror (e));
+#else // DEVELOPER
+      g_critical ("(" G_STRLOC "): kill ()! (%s)", GPOINTER_TO_INT (list->data), g_strerror (e));
+#endif // DEVELOPER
+      }
+}
+
+void j_closure_kill (GClosure* closure)
+{
+  g_return_if_fail (closure != NULL);
+  closure_kill ((gpointer) closure, SIGINT);
+}
+
+void j_closure_stop (GClosure* closure)
+{
+  g_return_if_fail (closure != NULL);
+  closure_kill ((gpointer) closure, SIGSTOP);
+}
+
 static void closure_nofity (gpointer __null__, JClosure* jc)
 {
   guint i;
-
-  for (i = 0; i < jc->expansions_count; ++i)
-    _g_free0 (jc->expansion_values [i]);
-    _g_free0 (jc->expansion_values);
-    _g_free0 (jc->expansion_pipes);
-
-  g_queue_clear (&jc->waitq);
 #if DEVELOPER == 1
   j_gdb_unregister (jc->debug_object);
   j_gdb_free (jc->debug_object);
 #endif // DEVELOPER
+
+  for (i = 0; i < jc->expansions_count; ++i)
+    _g_free0 (jc->expansion_values [i]);
+   _g_free0 (jc->expansion_values);
+   _g_free0 (jc->expansion_pipes);
+  for (i = 0; i < jc->detachables_count; ++i)
+    _j_ast_free0 (jc->detachables [i]);
+
+  g_queue_clear (&jc->waitq);
   j_block_clear (&jc->block);
 }
 
@@ -101,9 +135,9 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
   while ((link = g_queue_peek_head_link (&jc->waitq)) != NULL)
     {
       gint pid = GPOINTER_TO_INT (link->data);
-      gint status = 0;
+      gint status, result;
 
-      if ((j_waitpid (pid, &status, WNOHANG, &tmperr)), G_UNLIKELY (tmperr != NULL))
+      if ((result = j_waitpid (pid, &status, WNOHANG, &tmperr)), G_UNLIKELY (tmperr != NULL))
         {
           g_propagate_error (error, tmperr);
           g_value_set_int (return_value, J_CLOSURE_STATUS_REMOVE);
@@ -111,18 +145,18 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
         }
       else
         {
-          if (!WIFEXITED (status) && !WIFSIGNALED (status))
+          if (result == 0)
             {
-              g_value_set_int (return_value, J_CLOSURE_STATUS_CONTINUE);
+              /* Still running */
+              g_value_set_int (return_value, J_CLOSURE_STATUS_WAITING);
               return;
             }
           else
             {
-              g_queue_unlink (&jc->waitq, link);
-              g_list_free (link);
-              waitpid (pid, &status, 0);
+              g_queue_delete_link (&jc->waitq, link);
 
-              if (WEXITSTATUS (status) != 0 || WIFSIGNALED (status))
+              if ((WIFEXITED (status) && WEXITSTATUS (status) != 0)
+                  || WIFSIGNALED (status))
                 {
                   jc->condition |= 1;
                 }
@@ -132,6 +166,38 @@ static void closure_marshal (JClosure* jc, GValue* return_value, guint n_param_v
 
   g_value_set_int (return_value, jc->entry (jc, runner, error));
   jc->condition = 0;
+}
+
+static gboolean detachable_link (JAst* ast, Dst_DECL)
+{
+  if (j_ast_get_ast_type (ast) == J_AST_TYPE_DATA)
+    {
+      JAst* child;
+      JTag tag;
+#if DEVELOPER == 1
+      g_assert (j_ast_n_children (ast) == 1);
+#endif // DEVELOPER
+      child = j_ast_get_first_child (ast);
+
+      j_tag_once_string (Dst, &tag, child->data);
+      j_tag_copy (&tag, &child->data);
+    }
+return FALSE;
+}
+
+static gboolean detachable_encode (JAst* ast, gpointer* data)
+{
+  if (j_ast_get_ast_type (ast) == J_AST_TYPE_DATA)
+    {
+      JContext* Dst = data [0];
+      JClosure* jc = data [1];
+      JAst* child;
+      JTag tag;
+
+      child = j_ast_get_first_child (ast);
+      child->data = j_tag_as_offset (Dst, &child->data) + j_block_ptr (&jc->block);
+    }
+return FALSE;
 }
 
 GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
@@ -151,8 +217,23 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
 
   j_context_init (&context);
   j_tag_init (&context, &tag);
-
   j_context_generate (&context, ast, &tag);
+
+  if (context.detachables.length > 0)
+    {
+      GList* list;
+
+      for (list = g_queue_peek_head_link (&context.detachables); list; list = list->next)
+      {
+        const GTraverseType order = (GTraverseType) G_PRE_ORDER;
+        const GTraverseFlags flags = (GTraverseFlags) G_TRAVERSE_NON_LEAVES;
+        const GNodeTraverseFunc func = (GNodeTraverseFunc) detachable_link;
+
+        list->data = j_ast_copy (list->data);
+        g_node_traverse (list->data, order, flags, -1, func, &context);
+      }
+    }
+
   j_context_finish (&context);
 
   if ((result = dasm_link (&context, &sz)), G_UNLIKELY (result != 0))
@@ -214,6 +295,28 @@ GClosure* j_codegen_emit (JCodegen* codegen, JAst* ast, GError** error)
       g_closure_unref (gc);
       j_context_clear (&context);
     }
+
+  if (context.detachables.length == 0)
+    jc->detachables = NULL;
+  else
+    {
+      GList* list;
+      gpointer data [] = { &context, jc, };
+
+      jc->detachables = g_new (gpointer, context.detachables.length);
+      jc->detachables_count = context.detachables.length;
+
+      for (list = g_queue_peek_head_link (&context.detachables); list; list = list->next)
+        {
+          const GTraverseType order = (GTraverseType) G_PRE_ORDER;
+          const GTraverseFlags flags = (GTraverseFlags) G_TRAVERSE_NON_LEAVES;
+          const GNodeTraverseFunc func = (GNodeTraverseFunc) detachable_encode;
+
+          jc->detachables [i] = list->data;
+          g_node_traverse (list->data, order, flags, -1, func, data);
+        }
+    }
+
 #if DEVELOPER == 1
   j_context_emit_debuginfo (&context);
   j_gdb_register (jc->debug_object = j_gdb_builder_end (&context.debug_builder));

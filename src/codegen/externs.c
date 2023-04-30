@@ -149,12 +149,15 @@ gint j_parse_int (const gchar* value, GError** error)
 return (gint) result;
 }
 
-void j_waitpid (pid_t pid, gint* status_code, gint flags, GError** error)
+gint j_waitpid (pid_t pid, gint* status_code, gint flags, GError** error)
 {
-  if (waitpid (pid, status_code, flags) < 0)
+  gint result = 0;
+
+  if ((result = waitpid (pid, status_code, flags)) < 0)
 #if DEVELOPER == 1
     j_set_closure_error_waitpid (error, errno, "waitpid (%i)!", pid);
 #else // DEVELOPER
     j_set_closure_error_waitpid (error, errno, "waitpid ()!");
 #endif // DEVELOPER
+return result;
 }

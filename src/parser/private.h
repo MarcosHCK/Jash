@@ -41,10 +41,10 @@ extern "C" {
           "J_AST_TYPE_REDIRECT_OUTPUT_REPLACE", "J_AST_TYPE_SCOPE", "J_AST_TYPE_TARGET",
         };
 
-      if (ast->parent != NULL && (j_ast_get_type (ast->parent) == J_AST_TYPE_DATA))
+      if (ast->parent != NULL && (j_ast_get_ast_type (ast->parent) == J_AST_TYPE_DATA))
         g_printerr ("%snode - %s\n", pre->str, (gchar*) ast->data);
       else
-        g_printerr ("%snode - %s\n", pre->str, types [j_ast_get_type (ast)]);
+        g_printerr ("%snode - %s\n", pre->str, types [j_ast_get_ast_type (ast)]);
 
       g_string_append_c (pre, '|');
       g_string_append_c (pre, ' ');

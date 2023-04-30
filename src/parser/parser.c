@@ -48,6 +48,7 @@ struct _JParserClass
 };
 
 G_DEFINE_FINAL_TYPE (JParser, j_parser, G_TYPE_OBJECT);
+G_DEFINE_BOXED_TYPE (JAst, j_ast, g_node_copy, g_node_destroy);
 G_DEFINE_QUARK (j-parser-error-quark, j_parser_error);
 
 static void j_parser_class_init (JParserClass* klass) { }
@@ -167,7 +168,7 @@ static guint claim_arguments (JAst* ast, gint min_arguments, gint max_arguments,
 
   while (child != NULL)
     {
-      switch (j_ast_get_type (child))
+      switch (j_ast_get_ast_type (child))
       {
         default:
           {
@@ -424,7 +425,7 @@ static JAst* walk_command (JWalker* walker, JToken* head, GError** error)
               target = j_ast_get_first_child (child);
 
   #if DEVELOPER == 1
-              g_assert (j_ast_get_type (target) == J_AST_TYPE_EXPANSION);
+              g_assert (j_ast_get_ast_type (target) == J_AST_TYPE_EXPANSION);
   #endif // DEVELOPER
 
               j_ast_unlink (target);
@@ -470,19 +471,6 @@ static void pushoper (GQueue* operand_queue, const JOperator* op)
   g_queue_push_head (operand_queue, operation);
 }
 
-#if DEVELOPER == 1
-# define j_operator_lookup(string,length) \
-  (({ \
-      const gchar* __string = ((string)); \
-      const gsize __length = ((length)); \
-      const JOperator* __desc = NULL; \
- ; \
-      if ((__desc = (j_operator_lookup) (__string, __length)) == NULL) \
-        g_assert_not_reached (); \
-        __desc; \
-    }))
-#endif // DEVELOPER
-
 static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
 { j_walker_dump (walker);
   GError* tmperr = NULL;
@@ -499,12 +487,26 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
       g_queue_clear (&operand_queue); \
       g_queue_clear (&operator_queue); \
     }))
+
 #define SEPARATORS \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_DETACH, \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_EXPANSION, \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_LOGICAL_AND, \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_LOGICAL_OR, \
   J_TOKEN_TYPE_OPERATOR, J_TOKEN_OPERATOR_PIPE
+
+#if DEVELOPER == 1
+# define j_operator_lookup(string,length) \
+  (({ \
+      const gchar* __string = ((string)); \
+      const gsize __length = ((length)); \
+      const JOperator* __desc = NULL; \
+ ; \
+      if ((__desc = (j_operator_lookup) (__string, __length)) == NULL) \
+        g_assert_not_reached (); \
+        __desc; \
+    }))
+#endif // DEVELOPER
 
   token = head;
 
@@ -551,6 +553,14 @@ static JAst* walk_expression (JWalker* walker, JToken* head, GError** error)
           else
             {
               g_queue_push_head (&operand_queue, command);
+
+              if (oper != NULL && oper->value == J_TOKEN_OPERATOR_DETACH)
+                {
+                  if (j_walker_length (walker) > 0)
+                  {
+                    EXCPT (THROW_UNEXPECTED (j_walker_take (walker)), (CLEANUP (), NULL));
+                  }
+                }
 
               if (oper != NULL && oper->value != J_TOKEN_OPERATOR_EXPANSION)
                 {

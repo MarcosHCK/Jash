@@ -24,6 +24,7 @@
 
 #define _g_closure_unref0(var) ((var == NULL) ? NULL : (var = (g_closure_unref (var), NULL)))
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
+#define _g_object_unref0(var) ((var == NULL) ? NULL : (var = (g_object_unref (var), NULL)))
 static gint run (guint argc, gchar* argv[], GError** error);
 
 int main (int argc, char* argv [])
@@ -86,39 +87,6 @@ int main (int argc, char* argv [])
 return (exit_code);
 }
 
-static GClosure* parse (JLexer* lexer, JParser* parser, JCodegen* codegen, const gchar* source, gboolean from_file, GError** error)
-{
-  GClosure* closure = NULL;
-  GError* tmperr = NULL;
-  JAst* ast = NULL;
-  JTokens* tokens = NULL;
-
-  if (from_file)
-    {
-      if ((tokens = j_lexer_scan_from_file (lexer, source, &tmperr)), G_UNLIKELY (tmperr != NULL))
-        {
-          g_propagate_error (error, tmperr);
-          return NULL;
-        }
-    }
-  else
-    {
-      if ((tokens = j_lexer_scan_from_data (lexer, source, strlen (source), &tmperr)), G_UNLIKELY (tmperr != NULL))
-        {
-          g_propagate_error (error, tmperr);
-          return NULL;
-        }
-    }
-
-  if ((ast = j_parser_parse (parser, tokens, &tmperr)), G_UNLIKELY (tmperr != NULL))
-    {
-      g_propagate_error (error, tmperr);
-      j_tokens_unref (tokens);
-      return NULL;
-    }
-return (closure = j_codegen_emit (codegen, ast, error), j_ast_free (ast), j_tokens_unref (tokens), closure);
-}
-
 static void on_variable_modifying (JRunner* runner, const gchar* key, const gchar* value, JReadline* readline)
 {
   if (!g_strcmp0 (key, "HISTCONTROL")) g_object_set (readline, "history-control", value, NULL);
@@ -149,50 +117,31 @@ static void on_variable_removing (JRunner* runner, const gchar* key, JReadline* 
 
 static gint run (guint argc, gchar* argv[], GError** error)
 {
-  GClosure* closure = NULL;
   GError* tmperr = NULL;
-  JCodegen* codegen = NULL;
-  JLexer* lexer = NULL;
-  JParser* parser = NULL;
   JReadline* readline = NULL;
   JRunner* runner = NULL;
   gboolean finish = FALSE;
   gchar* line = NULL;
   gint i, exit_code = 0;
 
-  codegen = j_codegen_new ();
-  lexer = j_lexer_new ();
-  parser = j_parser_new ();
   runner = j_runner_new (argc == 1);
 
 #define cleanup() \
-  (({ \
-      g_object_unref (codegen); \
-      g_object_unref (lexer); \
-      g_object_unref (parser); \
-      g_object_unref (runner); \
-        exit_code; \
-    }))
+    (({ \
+        _g_object_unref0 (readline); \
+        _g_object_unref0 (runner); \
+      }))
 
   if (argc > 1)
     {
       for (i = 1; i < argc && finish == FALSE; ++i)
-      {
-        if ((closure = parse (lexer, parser, codegen, argv [i], 1, &tmperr)), G_UNLIKELY (tmperr != NULL))
-          {
-            g_propagate_error (error, tmperr);
-            return (cleanup (), 1);
-          }
-
-        if ((finish = j_runner_run (runner, closure, &exit_code, &tmperr)), G_LIKELY (tmperr == NULL))
-          g_closure_unref (closure);
-        else
-          {
-            g_propagate_error (error, tmperr);
-            g_closure_unref (closure);
-            return (cleanup (), 1);
-          }
-      }
+        {
+          if ((finish = j_runner_run_file (runner, argv [i], &exit_code, &tmperr)), G_UNLIKELY (tmperr != NULL))
+            {
+              g_propagate_error (error, tmperr);
+              return (cleanup (), 1);
+            }
+        }
     }
   else
     {
@@ -213,27 +162,12 @@ static gint run (guint argc, gchar* argv[], GError** error)
               g_assert_not_reached ();
             }
 
-          if ((closure = parse (lexer, parser, codegen, line, 0, &tmperr)), G_UNLIKELY (tmperr != NULL))
-            {
-              const gint code = tmperr->code;
-              const gchar* domain = g_quark_to_string (tmperr->domain);
-              const gchar* message = tmperr->message;
-
-              g_printerr ("%s: %i: %s\n", domain, code, message);
-              _g_error_free0 (tmperr);
-              continue;
-            }
-
-          if ((finish = j_runner_run (runner, closure, &exit_code, &tmperr)), G_UNLIKELY (tmperr != NULL))
+          if ((finish = j_runner_run_line (runner, line, &exit_code, &tmperr)), G_UNLIKELY (tmperr != NULL))
             {
               g_propagate_error (error, tmperr);
-              g_closure_unref (closure);
               return (cleanup (), 1);
             }
-
-          j_readline_history_add (readline, line);
-        }
-      while ((_g_closure_unref0 (closure), finish) == FALSE);
+        } while ((j_readline_history_add (readline, line), finish) == FALSE);
 
       if ((j_readline_history_save (readline, &tmperr)), G_UNLIKELY (tmperr != NULL))
         {
@@ -242,4 +176,5 @@ static gint run (guint argc, gchar* argv[], GError** error)
         }
     }
 return (cleanup (), exit_code);
+#undef cleanup
 }

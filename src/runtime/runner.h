@@ -30,11 +30,13 @@ extern "C" {
   G_GNUC_INTERNAL GType j_runner_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JRunner* j_runner_new (gboolean interactive);
   G_GNUC_INTERNAL gboolean j_runner_get_interactive (JRunner* runner);
-  G_GNUC_INTERNAL gboolean j_runner_job_pop (JRunner* runner, GQueue* waitq);
-  G_GNUC_INTERNAL gboolean j_runner_job_pop_nth (JRunner* runner, GQueue* waitq, gint index);
+  G_GNUC_INTERNAL GClosure* j_runner_job_pop (JRunner* runner);
+  G_GNUC_INTERNAL GClosure* j_runner_job_pop_nth (JRunner* runner, gint index);
   G_GNUC_INTERNAL void j_runner_job_print_all (JRunner* runner);
-  G_GNUC_INTERNAL void j_runner_job_push (JRunner* runner, GQueue* waitq);
+  G_GNUC_INTERNAL void j_runner_job_push (JRunner* runner, GClosure* closure);
   G_GNUC_INTERNAL gboolean j_runner_run (JRunner* runner, GClosure* closure, gint* exit_code, GError** error);
+  G_GNUC_INTERNAL gboolean j_runner_run_file (JRunner* runner, const gchar* filename, gint* exit_code, GError** error);
+  G_GNUC_INTERNAL gboolean j_runner_run_line (JRunner* runner, const gchar* line, gint* exit_code, GError** error);
   G_GNUC_INTERNAL const gchar* j_runner_variable_get (JRunner* runner, const gchar* key);
   G_GNUC_INTERNAL void j_runner_variable_print (JRunner* runner, const gchar* key);
   G_GNUC_INTERNAL void j_runner_variable_print_all (JRunner* runner);

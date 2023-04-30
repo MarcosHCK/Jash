@@ -33,7 +33,7 @@ extern "C" {
   G_GNUC_INTERNAL gint j_parse_int (const gchar* value, GError** error);
   G_GNUC_INTERNAL void j_pipe_clear_many (JPipe* pipes, guint n_pipes);
   G_GNUC_INTERNAL void j_pipe_init_many (JPipe* pipes, guint n_pipes, GError** error);
-  G_GNUC_INTERNAL void j_waitpid (pid_t pid, gint* status_code, gint flags, GError** error);
+  G_GNUC_INTERNAL gint j_waitpid (pid_t pid, gint* status_code, gint flags, GError** error);
 
 #if __cplusplus
 }

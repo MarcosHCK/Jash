@@ -25,10 +25,10 @@
 |.globalnames globl_names
 |.section aux, code, data
 |
-|.type gpointer, gpointer
 |.type JClosure, JClosure
 |.type JPipe, JPipe
 |.type JPipeEnd, JPipeEnd
+|.type gpointer, gpointer
 |
 |.define RetContinue, J_CLOSURE_STATUS_CONTINUE
 |.define RetRemove, J_CLOSURE_STATUS_REMOVE
@@ -51,6 +51,7 @@
 ||  dasm_setupglobal (Dst, Dst->labels, Dst->n_labels);
 ||  dasm_setup (Dst, actions);
 ||  dasm_growpc (Dst, Dst->maxpc);
+||  g_queue_init (&Dst->detachables);
 ||
 |   .code
 |->__code_start:
@@ -67,6 +68,7 @@
 ||  g_hash_table_unref (Dst->debug_info);
 #endif // DEVELOPER
 ||  g_free (Dst->labels);
+||  g_queue_clear (&Dst->detachables);
 ||  g_hash_table_remove_all (Dst->symbols);
 ||  g_hash_table_unref (Dst->symbols);
 ||  g_hash_table_remove_all (Dst->strtab);

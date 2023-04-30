@@ -15,7 +15,11 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
+#include <codegen/closure.h>
 #include <codegen/codegen.h>
+#include <lexer/datachannel.h>
+#include <lexer/lexer.h>
+#include <parser/parser.h>
 #include <runtime/marshal.h>
 #include <runtime/runner.h>
 
@@ -23,7 +27,11 @@
 #define J_IS_RUNNER_CLASS(klass) (G_TYPE_CHECK_CLASS_TYPE ((klass), J_TYPE_RUNNER))
 #define J_RUNNER_GET_CLASS(obj) (G_TYPE_INSTANCE_GET_CLASS ((obj), J_TYPE_RUNNER, JRunnerClass))
 typedef struct _JRunnerClass JRunnerClass;
+#define _g_closure_unref0(var) ((var == NULL) ? NULL : (var = (g_closure_unref (var), NULL)))
 #define _g_error_free0(var) ((var == NULL) ? NULL : (var = (g_error_free (var), NULL)))
+#define _g_object_unref0(var) ((var == NULL) ? NULL : (var = (g_object_unref (var), NULL)))
+#define _j_ast_free0(var) ((var == NULL) ? NULL : (var = (j_ast_free (var), NULL)))
+#define _j_tokens_unref0(var) ((var == NULL) ? NULL : (var = (j_tokens_unref (var), NULL)))
 static gint next_order = 1;
 typedef struct _Job Job;
 
@@ -32,7 +40,10 @@ struct _JRunner
   GObject parent;
   GQueue background;
   GTree* background_ref;
+  JCodegen* codegen;
   guint interactive : 1;
+  JLexer* lexer;
+  JParser* parser;
   GHashTable* variables;
 };
 
@@ -48,7 +59,8 @@ struct _Job
 {
   guint order : (sizeof (guint) * 8 - 1);
   guint is_running : 1;
-  GQueue waitq;
+  gint exit_code;
+  GClosure* closure;
 };
 
 enum
@@ -71,13 +83,16 @@ static guint signals [signal_number] = {0};
 
 static void job_free (Job* job)
 {
-  g_queue_clear (&job->waitq);
+  g_closure_unref (job->closure);
   g_slice_free (Job, job);
 }
 
 static void j_runner_class_dispose (GObject* pself)
 {
   JRunner* self = (gpointer) pself;
+  _g_object_unref0 (self->codegen);
+  _g_object_unref0 (self->lexer);
+  _g_object_unref0 (self->parser);
   g_queue_clear_full (&self->background, (GDestroyNotify) job_free);
   g_tree_remove_all (self->background_ref);
   g_hash_table_remove_all (self->variables);
@@ -168,8 +183,11 @@ static void j_runner_init (JRunner* self)
   const GCompareDataFunc func3 = (GCompareDataFunc) uintcmp;
   const GDestroyNotify notify1 = (GDestroyNotify) g_free;
 
-  self->variables = g_hash_table_new_full (func1, func2, notify1, notify1);
   self->background_ref = g_tree_new_full (func3, NULL, NULL, NULL);
+  self->codegen = j_codegen_new ();
+  self->lexer = j_lexer_new ();
+  self->parser = j_parser_new ();
+  self->variables = g_hash_table_new_full (func1, func2, notify1, notify1);
 }
 
 JRunner* j_runner_new (gboolean interactive)
@@ -183,51 +201,46 @@ gboolean j_runner_get_interactive (JRunner* runner)
 return runner->interactive;
 }
 
-gboolean j_runner_job_pop (JRunner* runner, GQueue* waitq)
+GClosure* j_runner_job_pop (JRunner* runner)
 {
   g_return_val_if_fail (J_IS_RUNNER (runner), FALSE);
-  g_return_val_if_fail (waitq != NULL, FALSE);
   JRunner* self = (runner);
+  GClosure* closure;
   GList* list;
   Job* job;
 
-  if ((list = g_queue_pop_head_link (&self->background)) != NULL)
+  if ((list = g_queue_peek_head_link (&self->background)) != NULL)
     {
-      g_list_free ((job = list->data, list));
+      g_queue_delete_link (&self->background, (job = list->data, list));
       g_tree_remove (self->background_ref, GUINT_TO_POINTER (job->order));
-
-      while ((list = g_queue_pop_head_link (&job->waitq)) != NULL)
-        g_queue_push_tail_link (waitq, list);
-      return (job_free (job), TRUE);
+      return (closure = job->closure, job_free (job), closure);
     }
-return FALSE;
+return NULL;
 }
 
-gboolean j_runner_job_pop_nth (JRunner* runner, GQueue* waitq, gint order)
+GClosure* j_runner_job_pop_nth (JRunner* runner, gint order)
 {
   g_return_val_if_fail (J_IS_RUNNER (runner), FALSE);
-  g_return_val_if_fail (waitq != NULL, FALSE);
+  g_return_val_if_fail (order > 0, FALSE);
   JRunner* self = (runner);
+  GClosure* closure;
   GList* list;
   Job* job;
 
   if ((list = g_tree_lookup (self->background_ref, GUINT_TO_POINTER (order))) != NULL)
     {
-      g_list_free ((job = list->data, list));
+      g_queue_delete_link (&self->background, (job = list->data, list));
       g_tree_remove (self->background_ref, GUINT_TO_POINTER (job->order));
-
-      while ((list = g_queue_pop_head_link (&job->waitq)) != NULL)
-        g_queue_push_tail_link (waitq, list);
-      return (job_free (job), TRUE);
+      return (closure = job->closure, job_free (job), closure);
     }
-return FALSE;
+return NULL;
 }
 
 static void job_print (guint order, const Job* job, gpointer* data)
 {
   const gchar lead = (job == data [0]) ? '+' : ((job == data [1]) ? '-' : '\x20');
   const gchar* state = (job->is_running) ? "Running" : "Stopped";
-  g_print ("%c[%i] %s", lead, order, state);
+  g_print ("%c[%i] %s\n", lead, order, state);
 }
 
 void j_runner_job_print_all (JRunner* runner)
@@ -255,34 +268,126 @@ void j_runner_job_print_all (JRunner* runner)
   g_tree_foreach (runner->background_ref, func, data);
 }
 
-void j_runner_job_push (JRunner* runner, GQueue* waitq)
+void j_runner_job_push (JRunner* runner, GClosure* closure)
 {
   g_return_if_fail (J_IS_RUNNER (runner));
-  g_return_if_fail (waitq != NULL);
+  g_return_if_fail (closure != NULL);
   JRunner* self = (runner);
   Job* job = g_slice_new0 (Job);
   guint order = g_atomic_int_add (&next_order, 1);
   GList* list;
 
-  while ((list = g_queue_pop_head_link (waitq)) != NULL)
-    g_queue_push_tail_link (&job->waitq, list);
-
   list = g_list_alloc ();
   list->data = job;
   job->order = order;
+  job->closure = closure;
 
   g_queue_push_head_link (&self->background, list);
   g_tree_insert (self->background_ref, GUINT_TO_POINTER (order), list);
+  g_closure_sink (g_closure_ref (closure));
 }
 
-gboolean j_runner_run (JRunner* runner, GClosure* closure, gint* exit_code, GError** error)
+static GClosure* parse_staged (JRunner* self, GValue* value, GError** error)
 {
-  g_return_val_if_fail (J_IS_RUNNER (runner), FALSE);
-  g_return_val_if_fail (closure != NULL, FALSE);
-  g_return_val_if_fail (exit_code != NULL, FALSE);
+  const gchar* string = NULL;
+  GBytes* bytes = NULL;
+  GIOChannel* channel = NULL;
+  JTokens* tokens = NULL;
+  JAst* ast = NULL;
+  GClosure* closure = NULL;
+  GError* tmperr = NULL;
+  guint stage = 0;
+
+  enum
+    {
+      STAGE_LEXER_PRE,
+      STAGE_LEXER,
+      STAGE_PARSER,
+      STAGE_CODEGEN,
+      STAGE_COMPLETE
+    };
+
+  if (G_VALUE_HOLDS (value, G_TYPE_IO_CHANNEL))
+    {
+      channel = g_value_get_boxed (value);
+      stage = STAGE_LEXER;
+    }
+  else if (G_VALUE_HOLDS (value, G_TYPE_STRING))
+    {
+      /* used by again */
+      string = g_value_get_string (value);
+      bytes = g_bytes_new_static (string, strlen (string));
+      channel = j_data_channel_new_bytes (bytes);
+      stage = (g_bytes_unref (bytes), STAGE_LEXER_PRE);
+    }
+  else if (G_VALUE_HOLDS (value, J_TYPE_AST))
+    {
+      ast = g_value_get_boxed (value);
+      stage = STAGE_CODEGEN;
+    }
+  else if (G_VALUE_HOLDS (value, J_TYPE_CLOSURE))
+    {
+      closure = g_value_get_boxed (value);
+      stage = STAGE_COMPLETE;
+    }
+  else g_assert_not_reached ();
+
+  switch (stage)
+  {
+    case STAGE_LEXER_PRE:
+    case STAGE_LEXER:
+      {
+        if ((tokens = j_lexer_scan_from_channel (self->lexer, channel, &tmperr)), G_UNLIKELY (tmperr != NULL))
+          {
+            g_propagate_error (error, tmperr);
+            break;
+          }
+        G_GNUC_FALLTHROUGH;
+      }
+    case STAGE_PARSER:
+      {
+        if ((ast = j_parser_parse (self->parser, tokens, &tmperr)), G_UNLIKELY (tmperr != NULL))
+          {
+            g_propagate_error (error, tmperr);
+            _j_tokens_unref0 (tokens);
+            break;
+          }
+        G_GNUC_FALLTHROUGH;
+      }
+    case STAGE_CODEGEN:
+      {
+        if ((closure = j_codegen_emit (self->codegen, ast, &tmperr)), G_UNLIKELY (tmperr != NULL))
+          {
+            g_propagate_error (error, tmperr);
+            _j_tokens_unref0 (tokens);
+
+            if (stage != STAGE_CODEGEN)
+              {
+                _j_ast_free0 (ast);
+              }
+            break;
+          }
+        G_GNUC_FALLTHROUGH;
+      }
+    case STAGE_COMPLETE:
+      {
+        _j_tokens_unref0 (tokens);
+
+        if (stage != STAGE_CODEGEN)
+          {
+            _j_ast_free0 (ast);
+          }
+        return g_closure_ref (closure);
+      }
+    default: g_assert_not_reached ();
+  }
+return (({ g_assert_not_reached (); }), NULL);
+}
+
+static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code_p, gboolean foreground, GError** error)
+{
   GValue param_values [2] = {0};
   GValue return_value [1] = {0};
-  GValue* exit_value = NULL;
   gboolean exit_thrown = FALSE;
   GError* tmperr = NULL;
 
@@ -290,28 +395,167 @@ gboolean j_runner_run (JRunner* runner, GClosure* closure, gint* exit_code, GErr
   g_value_init (param_values + 1, G_TYPE_POINTER);
   g_value_init (return_value + 0, G_TYPE_INT);
 
-  g_value_set_object (param_values + 0, runner);
+  g_value_set_object (param_values + 0, self);
   g_value_set_pointer (param_values + 1, &tmperr);
 
   do
   {
+    if (foreground)
+    {
+      GList* list = NULL;
+      Job* job = NULL;
+      gint exit_code;
+
+      for (list = g_queue_peek_head_link (&self->background); list; list = list->next)
+        {
+          job = list->data;
+
+          if ((exit_thrown = run_unchecked (self, job->closure, &exit_code, FALSE, &tmperr)), G_UNLIKELY (tmperr != NULL))
+            {
+              g_propagate_error (error, tmperr);
+              exit_thrown = FALSE;
+              break;
+            }
+          else
+            {
+              if (exit_thrown)
+              {
+                job->exit_code = exit_code;
+                job->is_running = FALSE;
+                exit_thrown = FALSE;
+              }
+            }
+        }
+
+      if (G_UNLIKELY (tmperr != NULL))
+        break;
+    }
+
     if ((g_closure_invoke (closure, return_value, 2, param_values, NULL)), G_UNLIKELY (tmperr != NULL))
     {
-      if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_EXIT))
+      if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_IRQ))
         {
           g_propagate_error (error, tmperr);
           break;
         }
       else
         {
-          exit_thrown = TRUE;
-          exit_value = j_closure_error_value (tmperr);
-          exit_code [0] = g_value_get_int (exit_value);
-            _g_error_free0 (tmperr);
+          GClosure* closure2 = NULL;
+          GError* tmperr2 = NULL;
+          GValue* value = NULL;
+
+          value = j_closure_error_value (tmperr);
+
+          if (G_VALUE_HOLDS (value, G_TYPE_INT))
+            {
+              exit_thrown = TRUE;
+              exit_code_p [0] = g_value_get_int (value);
+            }
+          else
+            {
+              if ((closure2 = parse_staged (self, value, &tmperr2)), G_UNLIKELY (tmperr2 != NULL))
+                {
+                  g_propagate_error (error, tmperr2);
+                  _g_error_free0 (tmperr);
+                  break;
+                }
+
+              if (G_VALUE_HOLDS (value, J_TYPE_AST))
+                {
+                  /* Detach (&) */
+                  j_runner_job_push (self, closure2);
+                }
+              else if (G_VALUE_HOLDS (value, J_TYPE_CLOSURE) /* Bring to front (fg) */
+                    || G_VALUE_HOLDS (value, G_TYPE_STRING) /* Execute (again) */)
+                {
+                  gint exit_code = 0;
+
+                  if ((j_runner_run (self, closure2, &exit_code, &tmperr2)), G_LIKELY (tmperr2 == NULL))
+                    {
+                      goffset offset = G_STRUCT_OFFSET (JClosure, condition);
+                      gboolean condition = (exit_code != 0) ? 1 : 0;
+
+                      G_STRUCT_MEMBER (gboolean, closure, offset) |= condition;
+                    }
+                  else
+                    {
+                      g_propagate_error (error, tmperr2);
+                      _g_closure_unref0 (closure2);
+                      _g_error_free0 (tmperr);
+                      break;
+                    }
+                }
+
+              g_closure_unref (closure2);
+            }
+        }
+
+      _g_error_free0 (tmperr);
+    }
+  } while ((g_value_get_int (return_value) == J_CLOSURE_STATUS_CONTINUE)
+        || (foreground && (g_value_get_int (return_value) == J_CLOSURE_STATUS_WAITING)));
+return (g_value_unset (return_value), g_value_unset (param_values + 0), g_value_unset (param_values + 1), exit_thrown);
+}
+
+gboolean j_runner_run (JRunner* runner, GClosure* closure, gint* exit_code, GError** error)
+{
+  g_return_val_if_fail (J_IS_RUNNER (runner), FALSE);
+  g_return_val_if_fail (closure != NULL, FALSE);
+  g_return_val_if_fail (exit_code != NULL, FALSE);
+  GError* tmperr = NULL;
+return run_unchecked (runner, closure, exit_code, TRUE, error);
+}
+
+gboolean j_runner_run_file (JRunner* runner, const gchar* filename, gint* exit_code, GError** error)
+{
+  GValue value [1] = {0};
+  GIOChannel* channel = NULL;
+  GClosure* closure = NULL;
+  GError* tmperr = NULL;
+  gboolean result = FALSE;
+
+  if ((channel = g_io_channel_new_file (filename, "r", &tmperr)), G_UNLIKELY (tmperr != NULL))
+    g_propagate_error (error, tmperr);
+  else
+    {
+      g_value_init (value, G_TYPE_IO_CHANNEL);
+      g_value_take_boxed (value, channel);
+
+      if ((closure = parse_staged (runner, value, &tmperr), g_value_unset (value)), G_UNLIKELY (tmperr != NULL))
+        g_propagate_error (error, tmperr);
+      else
+        {
+          if ((result = j_runner_run (runner, closure, exit_code, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL))
+            g_propagate_error (error, tmperr);
         }
     }
-  } while (g_value_get_int (return_value) == J_CLOSURE_STATUS_CONTINUE);
-return (g_value_unset (return_value), g_value_unset (param_values + 0), g_value_unset (param_values + 1), exit_thrown);
+return result;
+}
+
+gboolean j_runner_run_line (JRunner* runner, const gchar* line, gint* exit_code, GError** error)
+{
+  GValue value [1] = {0};
+  GIOChannel* channel = NULL;
+  GBytes* bytes = NULL;
+  GClosure* closure = NULL;
+  GError* tmperr = NULL;
+  gboolean result = FALSE;
+
+  bytes = g_bytes_new_static (line, strlen (line));
+  channel = j_data_channel_new_bytes (bytes);
+
+  g_value_init (value, G_TYPE_IO_CHANNEL);
+  g_value_take_boxed (value, channel);
+  g_bytes_unref (bytes);
+
+  if ((closure = parse_staged (runner, value, &tmperr), g_value_unset (value)), G_UNLIKELY (tmperr != NULL))
+    g_propagate_error (error, tmperr);
+  else
+    {
+      if ((result = j_runner_run (runner, closure, exit_code, &tmperr), g_closure_unref (closure)), G_UNLIKELY (tmperr != NULL))
+        g_propagate_error (error, tmperr);
+    }
+return result;
 }
 
 const gchar* j_runner_variable_get (JRunner* runner, const gchar* key)

@@ -26,16 +26,13 @@
 #include <runtime/runner.h>
 
 typedef struct _JContext JContext;
-typedef struct _JClosure JClosure;
 typedef struct _JExtern JExtern;
 typedef const gchar JOnceID;
 typedef struct _JOnceInit JOnceInit;
 typedef gint JPipe [2];
-typedef gint JPipeEnd;
 typedef struct _JWalker JWalker;
 
 typedef void (*JCallback) ();
-typedef JClosureStatus (*JClosureCallback) (JClosure* closure, JRunner* runner, GError** error);
 
 #define Dst_DECL JContext* Dst
 #define Dst_REF (Dst->state)
@@ -78,26 +75,12 @@ extern "C"
     guint nextpc;
 
     guint max_expansions;
+    GQueue detachables;
     GHashTable* symbols;
     GHashTable* strtab;
 #if DEVELOPER == 1
     GHashTable* debug_info;
     JGdbBuilder debug_builder;
-#endif // DEVELOPER
-  };
-
-  struct _JClosure
-  {
-    GClosure closure;
-    JBlock block;
-    JClosureCallback entry;
-    JPipeEnd* expansion_pipes;
-    gchar** expansion_values;
-    guint expansions_count;
-    GQueue waitq;
-    gboolean condition;
-#if DEVELOPER == 1
-    JGdb* debug_object;
 #endif // DEVELOPER
   };
 
@@ -139,6 +122,7 @@ extern "C"
   G_GNUC_INTERNAL void j_context_emit_chain_last (Dst_DECL, const JTag* tag);
   G_GNUC_INTERNAL void j_context_emit_chain_last_and_report (Dst_DECL, guint exit_code, const JTag* tag);
   G_GNUC_INTERNAL void j_context_emit_chain_step (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
+  G_GNUC_INTERNAL void j_context_emit_chain_step_detach (Dst_DECL, guint index, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_chain_step_expansions (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_chain_step_expression (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_test (Dst_DECL, const JTag* tag, const JTag* tag_direct, const JTag* tag_reverse);
@@ -154,12 +138,12 @@ extern "C"
   G_GNUC_INTERNAL void j_once_init_branch_fail (Dst_DECL);
   G_GNUC_INTERNAL const JOnceInit* j_once_lookup (const gchar* name, size_t length);
 
-  G_GNUC_INTERNAL void j_set_closure_error_again (GError** error, const gchar* value);
   G_GNUC_INTERNAL void j_set_closure_error_chdir (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_dup2 (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_execvp (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_exit (GError** error, int value);
   G_GNUC_INTERNAL void j_set_closure_error_fork (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_irq (GError** error, GType gtype, ...);
   G_GNUC_INTERNAL void j_set_closure_error_open (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_pipe (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_waitpid (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);

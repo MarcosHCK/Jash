@@ -16,7 +16,6 @@
  */
 #ifndef __JASH_CODEGEN__
 #define __JASH_CODEGEN__ 1
-#include <glib-object.h>
 #include <parser/ast.h>
 
 #define J_TYPE_CODEGEN (j_codegen_get_type ())
@@ -26,6 +25,7 @@ typedef struct _JCodegen JCodegen;
 
 #define J_CLOSURE_ERROR (j_closure_error_quark ())
 #define J_CODEGEN_ERROR (j_codegen_error_quark ())
+#define J_TYPE_CLOSURE (j_closure_get_type ())
 
 #if __cplusplus
 extern "C" {
@@ -40,29 +40,13 @@ extern "C" {
     J_CODEGEN_ERROR_PROGRAM_LINK,
   } JCodegenError;
 
-  typedef enum
-  {
-    J_CLOSURE_ERROR_FAILED,
-    J_CLOSURE_ERROR_AGAIN,
-    J_CLOSURE_ERROR_CHDIR,
-    J_CLOSURE_ERROR_DUP2,
-    J_CLOSURE_ERROR_EXECVP,
-    J_CLOSURE_ERROR_EXIT,
-    J_CLOSURE_ERROR_FORK,
-    J_CLOSURE_ERROR_IRQ,
-    J_CLOSURE_ERROR_OPEN,
-    J_CLOSURE_ERROR_PIPE,
-    J_CLOSURE_ERROR_WAITPID,
-  } JClosureError;
-
-  typedef enum
-  {
-    J_CLOSURE_STATUS_REMOVE = 0,
-    J_CLOSURE_STATUS_CONTINUE = 1,
-  } JClosureStatus;
-
   G_GNUC_INTERNAL GQuark j_closure_error_quark (void) G_GNUC_CONST;
+  G_GNUC_INTERNAL GType j_closure_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GValue* j_closure_error_value (const GError* error);
+  G_GNUC_INTERNAL GClosure* j_closure_copy (const GClosure* closure);
+  G_GNUC_INTERNAL void j_closure_kill (GClosure* closure);
+  G_GNUC_INTERNAL void j_closure_stop (GClosure* closure);
+
   G_GNUC_INTERNAL GQuark j_codegen_error_quark (void) G_GNUC_CONST;
   G_GNUC_INTERNAL GType j_codegen_get_type (void) G_GNUC_CONST;
   G_GNUC_INTERNAL JCodegen* j_codegen_new ();

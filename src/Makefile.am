@@ -35,6 +35,7 @@ noinst_LTLIBRARIES=\
 
 noinst_HEADERS=\
 	codegen/block.h \
+	codegen/closure.h \
 	codegen/codegen.h \
 	codegen/context.h \
 	codegen/debug/gdb.h \
@@ -83,10 +84,6 @@ jash_LDADD=\
 	$(GLIB_LIBS) \
 	$(GOBJECT_LIBS) \
 	$(READLINE_LIBS) \
-	codegen/liba.la \
-	dossier/liba.la \
-	lexer/liba.la \
-	parser/liba.la \
 	runtime/liba.la \
 	term/liba.la \
 	$(VOID)
@@ -112,6 +109,7 @@ codegen_liba_la_LDFLAGS=\
 	$(VOID)
 codegen_liba_la_LIBADD=\
 	$(GLIB_LIBS) \
+	dossier/liba.la \
 	$(VOID)
 
 if DEBUG
@@ -194,6 +192,9 @@ runtime_liba_la_LDFLAGS=\
 	$(VOID)
 runtime_liba_la_LIBADD=\
 	$(GLIB_LIBS) \
+	codegen/liba.la \
+	lexer/liba.la \
+	parser/liba.la \
 	$(VOID)
 
 runtime/marshal.c: runtime/marshal.list

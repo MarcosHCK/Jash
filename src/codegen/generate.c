@@ -41,7 +41,7 @@ void j_context_generate (Dst_DECL, JAst* ast, const JTag* tag)
 
 static void walk_argument (Dst_DECL, JWalker* walker, JAst* ast, JArgument* argument)
 {
-  switch (j_ast_get_type (ast))
+  switch (j_ast_get_ast_type (ast))
     {
       case J_AST_TYPE_DATA:
         {
@@ -73,7 +73,7 @@ static void walk_argument (Dst_DECL, JWalker* walker, JAst* ast, JArgument* argu
 
 static void walk_command (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gint out_pipe)
 {
-  switch (j_ast_get_type (ast))
+  switch (j_ast_get_ast_type (ast))
     {
       case J_AST_TYPE_INVOKE: walk_invoke (Dst, walker, ast, in_pipe, out_pipe); break;
       case J_AST_TYPE_PIPE: walk_pipe (Dst, walker, ast, in_pipe, out_pipe); break;
@@ -83,7 +83,7 @@ static void walk_command (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gi
 
 static void walk_expression (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
 {
-  switch (j_ast_get_type (ast))
+  switch (j_ast_get_ast_type (ast))
   {
     case J_AST_TYPE_LOGICAL_AND:
     case J_AST_TYPE_LOGICAL_OR:
@@ -105,7 +105,10 @@ static void walk_expression (Dst_DECL, JAst* ast, const JTag* tag, const JTag* t
 
 static void walk_detach (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
 {
-  walk_expression (Dst, ast, tag, tag_next);
+  guint index = g_queue_get_length (&Dst->detachables);
+
+  j_context_emit_chain_step_detach (Dst, index, tag, tag_next);
+  g_queue_push_tail (&Dst->detachables, ast);
 }
 
 static void walk_ifclosure (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_next)
@@ -173,7 +176,7 @@ static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gin
        child;
        child = j_ast_get_next_sibling (child))
     {
-      switch (j_ast_get_type (child))
+      switch (j_ast_get_ast_type (child))
         {
           case J_AST_TYPE_ARGUMENTS: arguments = child; break;
           case J_AST_TYPE_BUILTIN: target = child; break;
@@ -203,7 +206,7 @@ static void walk_invoke (Dst_DECL, JWalker* walker, JAst* ast, gint in_pipe, gin
     walk_target (Dst, walker, target, invoke);
 
   if (redirect_out != NULL)
-  switch (j_ast_get_type (redirect_out))
+  switch (j_ast_get_ast_type (redirect_out))
     {
       case J_AST_TYPE_REDIRECT_OUTPUT_APPEND: invoke->stdout_mode = J_INVOKE_STD_FILE_MODE_APPEND; break;
       case J_AST_TYPE_REDIRECT_OUTPUT_REPLACE: invoke->stdout_mode = J_INVOKE_STD_FILE_MODE_REPLACE; break;
@@ -236,7 +239,7 @@ static void walk_logical (Dst_DECL, JAst* ast, const JTag* tag, const JTag* tag_
   walk_expression (Dst, child1, tag, &tag_condition);
   j_context_emit_test (Dst, &tag_condition, &tag_direct, &tag_reverse);
 
-  switch (j_ast_get_type (ast))
+  switch (j_ast_get_ast_type (ast))
   {
     case J_AST_TYPE_LOGICAL_AND:
       j_context_emit_chain_empty (Dst, &tag_reverse, tag_next);
@@ -280,7 +283,7 @@ static void walk_scope (Dst_DECL, JAst* ast, const JTag* tag_head, const JTag* t
       else
         j_tag_copy (tag_last, &tag_next);
 
-      switch (j_ast_get_type (child))
+      switch (j_ast_get_ast_type (child))
         {
           case J_AST_TYPE_DETACH:
             walk_detach (Dst, child, &tag, &tag_next);
@@ -308,12 +311,12 @@ static void walk_target (Dst_DECL, JWalker* walker, JAst* ast, JInvoke* invoke)
   g_assert (j_ast_n_children (ast) == 1);
 #endif // DEVELOPER
 
-  switch (j_ast_get_type (ast))
+  switch (j_ast_get_ast_type (ast))
     {
       case J_AST_TYPE_BUILTIN:
         {
   #if DEVELOPER == 1
-          g_assert (j_ast_get_type (child) == J_AST_TYPE_DATA);
+          g_assert (j_ast_get_ast_type (child) == J_AST_TYPE_DATA);
           g_assert (j_ast_n_children (child) == 1);
   #endif // DEVELOPER
           invoke->target_type = J_INVOKE_TARGET_TYPE_BUILTIN;

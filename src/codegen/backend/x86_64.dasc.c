@@ -15,6 +15,7 @@
  * along with JASH. If not, see <http://www.gnu.org/licenses/>.
  */
 #include <config.h>
+#include <codegen/closure.h>
 #include <codegen/codegen.h>
 #include <codegen/context.h>
 #include <codegen/externs.h>
@@ -57,6 +58,13 @@
 ||const guint j_gdb_default_mach = bfd_mach_x86_64;
 ||typedef union _JInvokeStdfile JInvokeStdfile;
 ||
+|.macro j_load_gtype, register, gtype
+||#if GLIB_SIZEOF_SIZE_T != GLIB_SIZEOF_LONG || !defined __cplusplus
+|   mov64 register, ((guintptr) gtype)
+||#else
+|   mov register, ((GType) gtype)
+||#endif
+|.endmacro
 |.macro j_step_adjust_io
 |   j_step_adjust_io_file stdin, STDIN_FILENO
 |   j_step_adjust_io_file stdout, STDOUT_FILENO
@@ -244,6 +252,45 @@
 ||      j_context_emit_chain_step_expansions (Dst, walker, tag, &intercept);
 ||      j_context_emit_chain_step_expression (Dst, walker, &intercept, tag_next);
 ||    }
+||}
+||
+||void j_context_emit_chain_step_detach (Dst_DECL, guint index, const JTag* tag, const JTag* tag_next)
+||{
+||/*
+|| * Stack (should be 16-bytes aligned):
+|| * > JClosure* self; (argument #1)
+|| * > JRunner* runner; (argument #2)
+|| * > GError** error; (argument #3)
+|| * before self goes other two 8-bytes slots
+|| * - return address (pushed by call, caller)
+|| * - frame pointer (pushed at function entry, callee)
+|| */
+||  gsize stacksize = 0
+|| + sizeof (JClosure*)
+|| + sizeof (JRunner*)
+|| + sizeof (GError**)
+||  ; stacksize += 16 - (stacksize % 16);
+||
+|=>(j_tag_as_pc (tag)):
+|   push rbp
+|   mov rbp, rsp
+|   sub rsp, stacksize
+|   mov self, c_arg1
+|   mov runner, c_arg2
+|   mov error, c_arg3
+|
+|   mov c_arg1, error
+|   j_load_gtype c_arg2, J_TYPE_AST
+|   mov c_arg3, self
+|   mov c_arg3, JClosure:c_arg3->detachables
+|   mov c_arg3, gpointer:c_arg3 [index]
+|
+|   call extern j_set_closure_error_irq
+|   mov rax, self
+|   j_step_branch_set_tag rax, tag_next
+|   leave
+|   mov rax, RetContinue
+|   ret
 ||}
 ||
 ||void j_context_emit_chain_step_expansions (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next)
@@ -571,6 +618,10 @@
 ||                 allocsz += 16 + (allocsz % 16);
 ||            gboolean use_malloc = allocsz > 1024;
 ||
+|             mov c_arg1, SIGINT
+|             mov c_arg2, SIG_DFL
+|             call extern signal
+||
 ||            if (use_malloc)
 ||              {
 |                 mov c_arg1, allocsz
@@ -675,13 +726,14 @@
 |                     mov c_arg1, gpointer:rsp [0]
 |                     call extern g_object_unref
 |
-|                     mov c_arg2, gpointer:rsp [1]
+|                     mov c_arg3, gpointer:rsp [1]
 |                     leave
 |
 ||                  /* Dirty trick */
 |                     pop rax
 |                     mov c_arg1, error
-|                     call extern j_set_closure_error_again
+|                     j_load_gtype c_arg2, G_TYPE_STRING
+|                     call extern j_set_closure_error_irq
 |                     mov rax, self
 |                     j_step_branch_set_tag rax, tag_next
 |                     leave
@@ -862,15 +914,13 @@
 ||                    }
 |
 |                   test rax, rax
-|                   jz >1
-|                     j_step_fork_and_report 0
-|                   1:
+|                   jnz >1
 |                     j_step_fork
 |                     test rax, rax
-|                     jz >1
+|                     jz >2
 |                       leave
 |                       ret
-|                     1:
+|                     2:
 |                       mov c_arg1, error
 |                       mov c_arg2, J_CLOSURE_ERROR
 |                       mov c_arg3, J_CLOSURE_ERROR_FAILED
@@ -878,6 +928,20 @@
 |                       call extern g_set_error_literal
 |                       leave
 |                       ret
+|                   1:
+|                     mov c_arg3, rax
+|                     leave
+|
+||                  /* Dirty trick */
+|                     pop rax
+|                     mov c_arg1, error
+|                     j_load_gtype c_arg2, J_TYPE_CLOSURE
+|                     call extern j_set_closure_error_irq
+|                     mov rax, self
+|                     j_step_branch_set_tag rax, tag_next
+|                     leave
+|                     mov rax, RetContinue
+|                     ret
 ||                }
 ||            }
 ||          else if (value == J_TOKEN_BUILTIN_GET)
