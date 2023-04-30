@@ -128,6 +128,8 @@ extern "C"
 
   #define J_CALLBACK(func) ((JCallback) ((func)))
 
+  G_GNUC_INTERNAL void j_builtin_help (JRunner* runner, const gchar* parameter);
+
   G_GNUC_INTERNAL void j_context_clear (Dst_DECL);
   G_GNUC_INTERNAL void j_context_emit_absolute_jump (Dst_DECL, gpointer address, const JTag* tag);
 #if DEVELOPER == 1

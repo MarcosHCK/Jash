@@ -259,7 +259,6 @@
 || * > GError** error; (argument #3)
 || * > GError* tmperr; (local variable)
 || * > JPipes* pipes; (local variable) (if any)
-|| * > JPipes pipes_ []; (local variable) (if any)
 || * before self goes other two 8-bytes slots
 || * - return address (pushed by call, caller)
 || * - frame pointer (pushed at function entry, callee)
@@ -316,9 +315,13 @@
 |           mov eax, dword JPipe:rsp [0] [0]
 |           mov c_arg1, self
 |           mov c_arg1, JClosure:c_arg1->expansion_pipes
-|           mov JPipeEnd:c_arg1 [i], eax
+|           mov dword JPipeEnd:c_arg1 [i], eax
 |           jmp >2
 |         1:
+|           mov c_arg1, self
+|           lea c_arg1, JClosure:c_arg1->waitq
+|           call extern g_queue_clear
+|
 |           movsxd c_arg1, dword JPipe:rsp [0] [1]
 |           mov c_arg2, (STDOUT_FILENO)
 |           lea c_arg3, tmperr
@@ -925,7 +928,7 @@
 |
 ||                if (value == J_TOKEN_BUILTIN_HELP)
 ||                  {
-||                    g_assert_not_reached ();
+|                     call extern j_builtin_help
 ||                  }
 ||                else if (value == J_TOKEN_BUILTIN_HISTORY)
 ||                  {
