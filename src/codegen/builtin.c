@@ -47,6 +47,22 @@
   J_SET_CLOSURE_ERROR_SYSCALL (WAITPID, waitpid);
 #undef J_SET_CLOSURE_ERROR_SYSCALL
 
+void j_set_closure_error_done (GError** error, int value)
+{
+  GValue* error_value;
+  GError* error_pointer;
+
+#if DEVELOPER == 1
+  error_pointer = g_error_new (J_CLOSURE_ERROR, J_CLOSURE_ERROR_DONE, "done %i", value);
+#else // !DEVELOPER
+  error_pointer = g_error_new_literal (J_CLOSURE_ERROR, J_CLOSURE_ERROR_IRQ, "done");
+#endif // DEVELOPER
+  error_value = j_closure_error_value (error_pointer);
+
+  g_value_set_int (g_value_init (error_value, G_TYPE_INT), value);
+  g_propagate_error (error, error_pointer);
+}
+
 void j_set_closure_error_exit (GError** error, int value)
 {
   GValue* error_value;

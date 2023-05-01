@@ -120,7 +120,6 @@ extern "C"
 #endif // DEVELOPER
   G_GNUC_INTERNAL void j_context_emit_chain_empty (Dst_DECL, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_chain_last (Dst_DECL, const JTag* tag);
-  G_GNUC_INTERNAL void j_context_emit_chain_last_and_report (Dst_DECL, guint exit_code, const JTag* tag);
   G_GNUC_INTERNAL void j_context_emit_chain_step (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_chain_step_detach (Dst_DECL, guint index, const JTag* tag, const JTag* tag_next);
   G_GNUC_INTERNAL void j_context_emit_chain_step_expansions (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next);
@@ -139,6 +138,7 @@ extern "C"
   G_GNUC_INTERNAL const JOnceInit* j_once_lookup (const gchar* name, size_t length);
 
   G_GNUC_INTERNAL void j_set_closure_error_chdir (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
+  G_GNUC_INTERNAL void j_set_closure_error_done (GError** error, int exit_code);
   G_GNUC_INTERNAL void j_set_closure_error_dup2 (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_execvp (GError** error, int errno_value, const gchar* fmt, ...) G_GNUC_PRINTF (3, 4);
   G_GNUC_INTERNAL void j_set_closure_error_exit (GError** error, int value);

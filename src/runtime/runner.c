@@ -239,7 +239,7 @@ return NULL;
 static void job_print (guint order, const Job* job, gpointer* data)
 {
   const gchar lead = (job == data [0]) ? '+' : ((job == data [1]) ? '-' : '\x20');
-  const gchar* state = (job->is_running) ? "Running" : "Stopped";
+  const gchar* state = (job->is_running) ? "Running" : "Done";
   g_print ("%c[%i] %s\n", lead, order, state);
 }
 
@@ -381,21 +381,7 @@ static GClosure* parse_staged (JRunner* self, GValue* value, GError** error)
       }
     default: g_assert_not_reached ();
   }
-return (({ g_assert_not_reached (); }), NULL);
-}
-
-static gboolean signaled = FALSE;
-
-static void signal_handler (int signum)
-{
-  switch (signum)
-  {
-    case SIGINT:
-      {
-        signaled = TRUE;
-        break;
-      }
-  }
+return NULL;
 }
 
 static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code_p, gboolean foreground, GError** error)
@@ -413,17 +399,6 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
   g_value_set_object (param_values + 0, self);
   g_value_set_pointer (param_values + 1, &tmperr);
 
-  if (foreground)
-  {
-    signaled = FALSE;
-
-    if (signal (SIGINT, signal_handler) < 0)
-      {
-        int e = errno;
-        g_error ("(" G_STRLOC "): singal ()! (%s)", g_strerror (e));
-      }
-  }
-
   do
   {
     if (foreground)
@@ -434,7 +409,8 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
 
       for (list = g_queue_peek_head_link (&self->background); list; list = list->next)
         {
-          job = list->data;
+          if (!(job = list->data)->is_running)
+            continue;
 
           if ((exit_thrown = run_unchecked (self, job->closure, &exit_code, FALSE, &tmperr)), G_UNLIKELY (tmperr != NULL))
             {
@@ -455,25 +431,29 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
 
       if (G_UNLIKELY (tmperr != NULL))
         break;
-
-      if (signaled)
-        {
-          signaled = FALSE;
-
-          switch (signalcnt++)
-          {
-            case 0: j_closure_kill ((gpointer) closure); break;
-            default: j_closure_term ((gpointer) closure); break;
-          }
-        }
     }
 
     if ((g_closure_invoke (closure, return_value, 2, param_values, NULL)), G_UNLIKELY (tmperr != NULL))
     {
       if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_IRQ))
         {
-          g_propagate_error (error, tmperr);
-          break;
+          if (!g_error_matches (tmperr, J_CLOSURE_ERROR, J_CLOSURE_ERROR_DONE))
+            {
+              g_propagate_error (error, tmperr);
+              break;
+            }
+          else
+            {
+              GValue* value = NULL;
+
+              if (!self->interactive)
+              {
+                value = j_closure_error_value (tmperr);
+
+                exit_thrown = TRUE;
+                exit_code_p [0] = g_value_get_int (value);
+              }
+            }
         }
       else
         {

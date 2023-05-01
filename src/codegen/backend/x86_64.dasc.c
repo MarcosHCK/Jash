@@ -219,18 +219,14 @@
 ||void j_context_emit_chain_last (Dst_DECL, const JTag* tag)
 ||{
 |=>(j_tag_as_pc (tag)):
-|   j_step_branch_put_last
-||}
-||
-||void j_context_emit_chain_last_and_report (Dst_DECL, guint exit_code, const JTag* tag)
-||{
-|=>(j_tag_as_pc (tag)):
-|   sub rsp, 8
+|   sub rsp, #gpointer
+|   mov qword JClosure:c_arg1->entry, 0
+|   movsxd c_arg2, dword JClosure:c_arg1->condition
 |   mov c_arg1, c_arg3
-|   mov c_arg2, (exit_code)
-|   call extern j_set_closure_error_exit
-|   add rsp, 8
-|   j_step_branch_put_last
+|   call extern j_set_closure_error_done
+|   mov rax, RetRemove
+|   add rsp, #gpointer
+|   ret
 ||}
 ||
 ||void j_context_emit_chain_step (Dst_DECL, JWalker* walker, const JTag* tag, const JTag* tag_next)
