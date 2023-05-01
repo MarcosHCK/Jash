@@ -21,7 +21,16 @@ along with JASH. If not, see <http://www.gnu.org/licenses/>.
   <gresource prefix="/org/hck/jash/">
 
     <!-- Strings -->
-    <file compressed="true">dossier/basic.strings</file>
+    <file>dossier/basic.strings</file>
+    <file>dossier/multipipe.strings</file>
+    <file>dossier/background.strings</file>
+    <file>dossier/spaces.strings</file>
+    <file>dossier/history.strings</file>
+    <file>dossier/chain.strings</file>
+    <file>dossier/if.strings</file>
+    <file>dossier/multif.strings</file>
+    <file>dossier/help.strings</file>
+    <file>dossier/variables.strings</file>
 
   </gresource>
 

@@ -93,15 +93,15 @@ void j_dossier_help (const gchar* parameter)
       g_print ("again [N]: repite la historia\n");
       g_print ("cd [DIR]: cambia la carpeta de ejecución a DIR\n");
       g_print ("exit [N]: hace que el shell retorne (N, or 0)\n");
-      g_print ("false: Nado, solo una función que siempre falla\n");
+      g_print ("false: Nada, solo una función que siempre falla\n");
       g_print ("fg [JOB_ORDER]: trae el job con orden JOB_ORDER hacia el frente\n");
       g_print ("get [NAME]: imprime el valor de la variable NAME\n");
       g_print ("help: muestra esta ayuda\n");
       g_print ("history: imprime el historial de comandos\n");
       g_print ("if ... then else end: ejecución condicional\n");
-      g_print ("jobs: iista los jobs pendientes\n");
+      g_print ("jobs: lista los jobs pendientes\n");
       g_print ("set [NAME] [VALUE]: Sobreescribe el valor de la variable NAME con VALUE\n");
-      g_print ("true: No hace nada, solo returna bien todo el tiempo\n");
+      g_print ("true: No hace nada, solo retorna bien todo el tiempo\n");
       g_print ("unset [NAME]: Destuye el valor de la variable NAME\n");
 
       const JDossierEntry* entry = NULL;

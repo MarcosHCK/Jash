@@ -444,15 +444,15 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
             }
           else
             {
-              GValue* value = NULL;
+              GValue* value = j_closure_error_value (tmperr);
 
-              if (!self->interactive)
-              {
-                value = j_closure_error_value (tmperr);
-
-                exit_thrown = TRUE;
+              if (self->interactive)
                 exit_code_p [0] = g_value_get_int (value);
-              }
+              else
+                {
+                  exit_thrown = TRUE;
+                  exit_code_p [0] = g_value_get_int (value);
+                }
             }
         }
       else
@@ -487,12 +487,19 @@ static gboolean run_unchecked (JRunner* self, GClosure* closure, gint* exit_code
                 {
                   gint exit_code = 0;
 
-                  if ((j_runner_run (self, closure2, &exit_code, &tmperr2)), G_LIKELY (tmperr2 == NULL))
+                  if ((exit_thrown = run_unchecked (self, closure2, &exit_code, TRUE, &tmperr2)),
+                        G_LIKELY (tmperr2 == NULL))
                     {
                       goffset offset = G_STRUCT_OFFSET (JClosure, condition);
                       gboolean condition = (exit_code != 0) ? 1 : 0;
 
                       G_STRUCT_MEMBER (gboolean, closure, offset) |= condition;
+
+                      if (exit_thrown)
+                        {
+                          exit_thrown = TRUE;
+                          exit_code_p [0] = exit_code;
+                        }
                     }
                   else
                     {
